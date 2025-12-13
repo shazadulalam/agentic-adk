@@ -8,9 +8,10 @@ import joblib
 import os
 from config import *
 
-class DataScientist:
+class ModelAnalyzer:
 
     def analyze_and_plot(self, df: pd.DataFrame):
+        REPORTS_DIR = "/home/forhad/Study/personal/projects/DataAgent/reports"
         os.makedirs(REPORTS_DIR, exist_ok=True)
         numeric_cols = df.select_dtypes(include="number").columns
         corr = df[numeric_cols].corr()

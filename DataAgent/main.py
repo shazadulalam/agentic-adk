@@ -1,10 +1,10 @@
-from agents.data_engineer import DataEngineer
-from agents.data_scientist import DataScientist
-from agents.llm_agent import LLMAgent
+from agents.cleanerAgent import Cleaner
+from agents.analyzer import ModelAnalyzer
 import pandas as pd
 
 def main():
     de = Cleaner()
+    ds = ModelAnalyzer()
 
     # Fetch Data
     try:
