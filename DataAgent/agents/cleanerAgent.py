@@ -1,6 +1,7 @@
 import pandas as pd
 from google.cloud import bigquery
 from sqlalchemy import create_engine
+from config import *
 
 class Cleaner:
 
