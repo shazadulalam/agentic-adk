@@ -1,5 +1,9 @@
+"""
+Enhanced DataAgent Dashboard with File Upload, Date Filtering, and Modern UI
+Inspired by Django template but built with Dash/Plotly
+"""
 import dash
-from dash import html, dcc, Input, Output, State, dash_table
+from dash import html, dcc, Input, Output, State, dash_table, callback_context
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -13,14 +17,19 @@ from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
-# Import agents
+# Import agents and utilities
 import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add parent directory to path
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
 from agents.cleanerAgent import Cleaner
 from agents.analyzer import ModelAnalyzer
 from agents.forecastingAgent import ForecastingAgent
 from agents.predictionAgent import PredictionAgent
 from agents.explorationAgent import ExplorationAgent
+from utils.data_loader import UniversalDataLoader
 from config import *
 
 # Initialize agents
@@ -29,247 +38,381 @@ analyzer = ModelAnalyzer()
 forecaster = ForecastingAgent()
 predictor = PredictionAgent()
 explorer = ExplorationAgent()
+data_loader = UniversalDataLoader()
 
-# Initialize Dash app
+# Initialize Dash app with Bootstrap
 app = dash.Dash(__name__, external_stylesheets=[
-    'https://codepen.io/chriddyp/pen/bWLwgP.css',
-    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css'
+    'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css',
+    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
+    'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
 ])
 
-# Custom CSS
-app.index_string = '''
-<!DOCTYPE html>
-<html>
-    <head>
-        {%metas%}
-        <title>DataAgent - Comprehensive Data Analysis Dashboard</title>
-        {%favicon%}
-        {%css%}
-        <style>
-            .header {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 20px;
-                border-radius: 10px;
-                margin-bottom: 20px;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            }
-            .metric-card {
-                background: white;
-                padding: 20px;
-                border-radius: 8px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                margin: 10px;
-            }
-            .tab-content {
-                padding: 20px;
-            }
-            .upload-area {
-                border: 2px dashed #667eea;
-                border-radius: 10px;
-                padding: 40px;
-                text-align: center;
-                background: #f8f9fa;
-                margin: 20px 0;
-            }
-        </style>
-    </head>
-    <body>
-        {%app_entry%}
-        <footer>
-            {%config%}
-            {%scripts%}
-            {%renderer%}
-        </footer>
-    </body>
-</html>
-'''
+# Load HTML template from views folder
+from views.template_renderer import get_renderer
 
-# Global variable to store current data
+renderer = get_renderer()
+app.index_string = renderer.load_template('dashboard_base.html')
+
+# Global variables
 current_df = None
+filtered_df = None
 analysis_results = {}
+date_column_detected = None
 
-# Try to load default dataset on startup
+# Try to load default dataset
 try:
     default_data_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
                                      'datasets', 'bq-results-covid-open-data.csv')
     if os.path.exists(default_data_path):
-        current_df = pd.read_csv(default_data_path, nrows=10000)  # Load first 10k rows for dashboard
-        print(f"✓ Loaded default dataset: {len(current_df)} rows")
+        current_df = data_loader.load(default_data_path)
+        if len(current_df) > 10000:
+            current_df = current_df.head(10000)  # Limit for dashboard performance
+        filtered_df = current_df.copy()
+        print(f"✓ Loaded default dataset: {len(current_df):,} rows")
 except Exception as e:
     print(f"Could not load default dataset: {e}")
 
-# App layout
+def detect_date_column(df):
+    """Detect date column in dataframe"""
+    if df is None or len(df) == 0:
+        return None
+    
+    # Check for explicit datetime columns
+    for col in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            return col
+    
+    # Check for columns with 'date' or 'time' in name
+    for col in df.columns:
+        col_lower = col.lower()
+        if 'date' in col_lower or 'time' in col_lower or 'timestamp' in col_lower:
+            try:
+                pd.to_datetime(df[col].dropna().iloc[0:10])
+                return col
+            except:
+                continue
+    
+    return None
+
+# Import HTML component generator
+from views.html_components import get_html_generator
+
+html_gen = get_html_generator()
+
+def create_metric_card(icon, value, label, color="#667eea"):
+    """Create a metric card component using HTML template"""
+    return html_gen.metric_card(icon, str(value), label, color)
+
+# App Layout
 app.layout = html.Div([
+    dcc.Store(id='data-store'),
+    dcc.Store(id='filtered-data-store'),
+    
     # Header
     html.Div([
-        html.H1("📊 DataAgent - Comprehensive Data Analysis Platform", 
-                style={'textAlign': 'center', 'margin': '0'}),
-        html.P("Advanced Analytics, Forecasting, and Predictive Modeling", 
-               style={'textAlign': 'center', 'margin': '10px 0 0 0', 'opacity': 0.9})
-    ], className='header'),
+        html.Div([
+            html.H1("📊 DataAgent Analytics Dashboard", 
+                   style={'margin': '0', 'fontWeight': '700', 'fontSize': '32px'}),
+            html.P("Advanced Data Analysis, Forecasting & Predictive Modeling", 
+                   style={'margin': '10px 0 0 0', 'opacity': 0.9, 'fontSize': '16px'})
+        ], className='container-fluid')
+    ], className='header-gradient'),
     
-    # Main content
+    # Main Content
     html.Div([
-        # Sidebar
         html.Div([
-            html.H3("📁 Data Source", style={'marginTop': '20px'}),
-            dcc.Upload(
-                id='upload-data',
-                children=html.Div([
-                    html.I(className="fas fa-cloud-upload-alt", style={'fontSize': '48px', 'color': '#667eea'}),
-                    html.P('Drag and Drop or Click to Upload CSV', style={'marginTop': '10px'})
-                ]),
-                style={
-                    'width': '100%',
-                    'height': '150px',
-                    'lineHeight': '150px',
-                    'borderWidth': '2px',
-                    'borderStyle': 'dashed',
-                    'borderRadius': '10px',
-                    'textAlign': 'center',
-                    'margin': '20px 0',
-                    'cursor': 'pointer'
-                },
-                multiple=False
-            ),
+            # Sidebar
+            html.Div([
+                html.H4("📁 Data Source", style={'marginBottom': '20px', 'fontWeight': '600'}),
+                
+                # File Upload (using HTML template)
+                dcc.Upload(
+                    id='upload-data',
+                    children=html_gen.upload_area(),
+                    style={'width': '100%'},
+                    multiple=False
+                ),
+                
+                html.Div(id='upload-status', style={'marginTop': '15px'}),
+                
+                html.Hr(style={'margin': '25px 0'}),
+                
+                # Date Range Filter (using HTML template)
+                html.Div(id='date-filter-section', children=html_gen.date_filter_section()),
+                
+                html.Hr(style={'margin': '25px 0'}),
+                
+                # Configuration
+                html.H5("⚙️ Configuration", style={'marginBottom': '15px', 'fontWeight': '600'}),
+                html.Label("Target Column:", style={'fontSize': '12px', 'fontWeight': '500', 'color': '#4a5568'}),
+                dcc.Dropdown(
+                    id='target-column',
+                    options=[],
+                    placeholder="Select target column",
+                    style={'marginBottom': '20px'}
+                ),
+                html.Label("Date Column:", style={'fontSize': '12px', 'fontWeight': '500', 'color': '#4a5568'}),
+                dcc.Dropdown(
+                    id='date-column',
+                    options=[],
+                    placeholder="Select date column",
+                    style={'marginBottom': '20px'}
+                ),
+                html.Label("Value Column:", style={'fontSize': '12px', 'fontWeight': '500', 'color': '#4a5568'}),
+                dcc.Dropdown(
+                    id='value-column',
+                    options=[],
+                    placeholder="Select value column",
+                    style={'marginBottom': '20px'}
+                ),
+                
+                html.Button("🔄 Run Full Analysis", id='run-analysis', n_clicks=0,
+                           className='btn btn-primary btn-primary-custom',
+                           style={'width': '100%', 'marginTop': '20px', 'padding': '15px'})
+                
+            ], className='sidebar col-md-3'),
             
-            html.Hr(),
-            
-            html.H3("⚙️ Configuration"),
-            html.Label("Target Column (for predictions):"),
-            dcc.Dropdown(
-                id='target-column',
-                options=[],
-                placeholder="Select target column",
-                style={'marginBottom': '20px'}
-            ),
-            
-            html.Label("Date Column (for forecasting):"),
-            dcc.Dropdown(
-                id='date-column',
-                options=[],
-                placeholder="Select date column",
-                style={'marginBottom': '20px'}
-            ),
-            
-            html.Label("Value Column (for forecasting):"),
-            dcc.Dropdown(
-                id='value-column',
-                options=[],
-                placeholder="Select value column",
-                style={'marginBottom': '20px'}
-            ),
-            
-            html.Button("🔄 Run Full Analysis", id='run-analysis', n_clicks=0,
-                       style={
-                           'width': '100%',
-                           'padding': '15px',
-                           'backgroundColor': '#667eea',
-                           'color': 'white',
-                           'border': 'none',
-                           'borderRadius': '5px',
-                           'fontSize': '16px',
-                           'cursor': 'pointer',
-                           'marginTop': '20px'
-                       }),
-            
-            html.Div(id='status-message', style={'marginTop': '20px', 'padding': '10px'})
-            
-        ], style={'width': '25%', 'display': 'inline-block', 'verticalAlign': 'top', 
-                  'padding': '20px', 'backgroundColor': '#f8f9fa', 'borderRadius': '10px',
-                  'marginRight': '20px'}),
-        
-        # Main content area
-        html.Div([
-            dcc.Tabs(id='main-tabs', value='overview', children=[
-                dcc.Tab(label='📈 Overview', value='overview'),
-                dcc.Tab(label='🔍 Exploratory Analysis', value='eda'),
-                dcc.Tab(label='📊 Visualizations', value='visualizations'),
-                dcc.Tab(label='🔮 Forecasting', value='forecasting'),
-                dcc.Tab(label='🤖 Predictions', value='predictions'),
-                dcc.Tab(label='💡 Insights', value='insights'),
-                dcc.Tab(label='📋 Data Table', value='data-table')
-            ]),
-            
-            html.Div(id='tab-content', className='tab-content')
-        ], style={'width': '70%', 'display': 'inline-block', 'verticalAlign': 'top'})
-    ], style={'display': 'flex', 'padding': '20px'})
+            # Main Content Area
+            html.Div([
+                # Metrics Cards Row
+                html.Div(id='metrics-row', className='row', style={'marginBottom': '30px'}),
+                
+                # Date Range Display
+                html.Div(id='date-range-display', style={'marginBottom': '20px'}),
+                
+                # Tabs
+                dcc.Tabs(id='main-tabs', value='overview', children=[
+                    dcc.Tab(label='📈 Overview', value='overview', 
+                           style={'fontWeight': '600'}, selected_style={'fontWeight': '700'}),
+                    dcc.Tab(label='📊 Visualizations', value='visualizations',
+                           style={'fontWeight': '600'}, selected_style={'fontWeight': '700'}),
+                    dcc.Tab(label='🔍 EDA Analysis', value='eda',
+                           style={'fontWeight': '600'}, selected_style={'fontWeight': '700'}),
+                    dcc.Tab(label='🔮 Forecasting', value='forecasting',
+                           style={'fontWeight': '600'}, selected_style={'fontWeight': '700'}),
+                    dcc.Tab(label='🤖 Predictions', value='predictions',
+                           style={'fontWeight': '600'}, selected_style={'fontWeight': '700'}),
+                    dcc.Tab(label='💡 Insights', value='insights',
+                           style={'fontWeight': '600'}, selected_style={'fontWeight': '700'}),
+                    dcc.Tab(label='📋 Data Table', value='data-table',
+                           style={'fontWeight': '600'}, selected_style={'fontWeight': '700'})
+                ], style={'marginBottom': '20px'}),
+                
+                # Tab Content
+                html.Div(id='tab-content', className='tab-content-wrapper')
+                
+            ], className='col-md-9')
+        ], className='row', style={'padding': '20px'})
+    ], className='container-fluid')
 ])
 
-# Callbacks
+# Callback: Handle file upload
 @app.callback(
-    [Output('target-column', 'options'),
+    [Output('data-store', 'data'),
+     Output('target-column', 'options'),
      Output('date-column', 'options'),
      Output('value-column', 'options'),
-     Output('status-message', 'children')],
+     Output('upload-status', 'children'),
+     Output('date-filter-section', 'style')],
     [Input('upload-data', 'contents')],
     [State('upload-data', 'filename')]
 )
-def update_columns(contents, filename):
-    global current_df
+def handle_upload(contents, filename):
+    global current_df, filtered_df, date_column_detected
     
     if contents is None:
-        # Return options for default dataset if available
+        # Return default dataset options
         if current_df is not None:
             options = [{'label': col, 'value': col} for col in current_df.columns]
             date_options = []
             for col in current_df.columns:
-                if current_df[col].dtype == 'datetime64[ns]' or 'date' in col.lower() or 'time' in col.lower():
+                if pd.api.types.is_datetime64_any_dtype(current_df[col]) or 'date' in col.lower():
                     date_options.append({'label': col, 'value': col})
-            numeric_options = [{'label': col, 'value': col} for col in current_df.select_dtypes(include=[np.number]).columns]
-            return options, date_options, numeric_options, html.Div(
-                f"✅ Default dataset loaded: {len(current_df):,} rows × {len(current_df.columns)} columns", 
-                style={'color': 'green', 'fontWeight': 'bold'}
+            numeric_options = [{'label': col, 'value': col} 
+                             for col in current_df.select_dtypes(include=[np.number]).columns]
+            
+            date_col = detect_date_column(current_df)
+            show_date_filter = {'display': 'block'} if date_col else {'display': 'none'}
+            
+            status_msg = html.Div([
+                html_gen.status_badge("✅ Default dataset loaded", 'success'),
+                html.P(f"{len(current_df):,} rows × {len(current_df.columns)} columns", 
+                      style={'margin': '5px 0 0 0', 'fontSize': '12px', 'color': '#718096'})
+            ])
+            return (
+                current_df.to_dict('records'),
+                options,
+                date_options,
+                numeric_options,
+                status_msg,
+                show_date_filter
             )
-        return [], [], [], ""
+        return None, [], [], [], html_gen.status_badge("No data loaded", 'error'), {'display': 'none'}
     
     try:
         content_type, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
         
+        # Use universal data loader
         if filename.endswith('.csv'):
             df = pd.read_csv(io.StringIO(decoded.decode('utf-8')))
+        elif filename.endswith(('.xlsx', '.xls', '.xlsm', '.xlsb')):
+            # For Excel, we need to save temporarily or use openpyxl
+            import tempfile
+            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp:
+                tmp.write(decoded)
+                tmp_path = tmp.name
+            df = data_loader.load(tmp_path)
+            os.unlink(tmp_path)
         else:
-            return [], [], [], html.Div("Please upload a CSV file", style={'color': 'red'})
+            return None, [], [], [], html.Div("Unsupported file format", 
+                                            className='status-badge status-error'), {'display': 'none'}
+        
+        # Limit size for dashboard performance
+        if len(df) > 10000:
+            df = df.head(10000)
         
         current_df = df
+        filtered_df = df.copy()
         
         options = [{'label': col, 'value': col} for col in df.columns]
-        
-        # Try to identify date columns
         date_options = []
         for col in df.columns:
-            if df[col].dtype == 'datetime64[ns]' or 'date' in col.lower() or 'time' in col.lower():
+            if pd.api.types.is_datetime64_any_dtype(df[col]) or 'date' in col.lower() or 'time' in col.lower():
                 date_options.append({'label': col, 'value': col})
+        numeric_options = [{'label': col, 'value': col} 
+                         for col in df.select_dtypes(include=[np.number]).columns]
         
-        # Try to identify numeric columns for value column
-        numeric_options = [{'label': col, 'value': col} for col in df.select_dtypes(include=[np.number]).columns]
+        date_col = detect_date_column(df)
+        show_date_filter = {'display': 'block'} if date_col else {'display': 'none'}
         
-        return options, date_options, numeric_options, html.Div(
-            f"✅ Loaded {len(df)} rows × {len(df.columns)} columns", 
-            style={'color': 'green', 'fontWeight': 'bold'}
+        status_msg = html.Div([
+            html_gen.status_badge(f"✅ {filename} loaded", 'success'),
+            html.P(f"{len(df):,} rows × {len(df.columns)} columns", 
+                  style={'margin': '5px 0 0 0', 'fontSize': '12px', 'color': '#718096'})
+        ])
+        return (
+            df.to_dict('records'),
+            options,
+            date_options,
+            numeric_options,
+            status_msg,
+            show_date_filter
         )
     except Exception as e:
-        return [], [], [], html.Div(f"Error: {str(e)}", style={'color': 'red'})
+        return None, [], [], [], html_gen.status_badge(f"Error: {str(e)}", 'error'), {'display': 'none'}
 
-
+# Callback: Date filtering
 @app.callback(
-    Output('tab-content', 'children'),
+    [Output('filtered-data-store', 'data'),
+     Output('date-range-display', 'children')],
+    [Input('apply-date-filter', 'n_clicks'),
+     Input('clear-date-filter', 'n_clicks')],
+    [State('start-date', 'date'),
+     State('end-date', 'date'),
+     State('date-column', 'value'),
+     State('data-store', 'data')]
+)
+def filter_by_date(apply_clicks, clear_clicks, start_date, end_date, date_col, data):
+    global filtered_df, current_df
+    
+    ctx = callback_context
+    if not ctx.triggered:
+        if current_df is not None:
+            filtered_df = current_df.copy()
+            return current_df.to_dict('records'), ""
+        return data, ""
+    
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    
+    if trigger_id == 'clear-date-filter':
+        if current_df is not None:
+            filtered_df = current_df.copy()
+            return current_df.to_dict('records'), ""
+        return data, ""
+    
+    if trigger_id == 'apply-date-filter' and date_col and start_date and end_date and data:
+        df = pd.DataFrame(data)
+        
+        # Convert date column to datetime
+        if date_col in df.columns:
+            df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+            start = pd.to_datetime(start_date)
+            end = pd.to_datetime(end_date)
+            
+            # Filter
+            mask = (df[date_col] >= start) & (df[date_col] <= end)
+            filtered_df = df[mask].copy()
+            
+            return (
+                filtered_df.to_dict('records'),
+                html.Div([
+                    html.P([
+                        html.Strong("Showing data: "),
+                        html.Span(f"{start_date} to {end_date}", 
+                                style={'color': '#667eea', 'fontWeight': '600'}),
+                        html.Span(f" ({len(filtered_df):,} rows)", 
+                                style={'color': '#718096', 'marginLeft': '10px'})
+                    ], style={'margin': '0', 'fontSize': '14px'})
+                ], className='date-filter-card')
+            )
+    
+    if current_df is not None:
+        filtered_df = current_df.copy()
+        return current_df.to_dict('records'), ""
+    return data, ""
+
+# Callback: Update metrics and content
+@app.callback(
+    [Output('metrics-row', 'children'),
+     Output('tab-content', 'children')],
     [Input('main-tabs', 'value'),
-     Input('run-analysis', 'n_clicks')],
+     Input('run-analysis', 'n_clicks'),
+     Input('filtered-data-store', 'data')],
     [State('target-column', 'value'),
      State('date-column', 'value'),
-     State('value-column', 'value')]
+     State('value-column', 'value'),
+     State('data-store', 'data')]
 )
-def update_tab_content(tab, n_clicks, target_col, date_col, value_col):
-    global current_df, analysis_results
+def update_content(tab, n_clicks, filtered_data, target_col, date_col, value_col, original_data):
+    global filtered_df, current_df, analysis_results
     
-    if current_df is None or len(current_df) == 0:
-        return html.Div([
+    # Use filtered data if available, otherwise original
+    if filtered_data:
+        df = pd.DataFrame(filtered_data)
+        filtered_df = df
+    elif original_data:
+        df = pd.DataFrame(original_data)
+        filtered_df = df
+    else:
+        df = current_df if current_df is not None else pd.DataFrame()
+    
+    if df is None or len(df) == 0:
+        return [], html.Div([
             html.H3("No data loaded"),
-            html.P("Please upload a CSV file to begin analysis")
+            html.P("Please upload a CSV/Excel file to begin analysis")
         ])
+    
+    # Calculate metrics
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    categorical_cols = df.select_dtypes(include=['object', 'category']).columns
+    missing_pct = (df.isnull().sum().sum() / (df.shape[0] * df.shape[1])) * 100 if df.shape[0] > 0 else 0
+    
+    # Create metric cards
+    metrics = html.Div([
+        html.Div([
+            create_metric_card("fas fa-database", f"{len(df):,}", "Total Rows", "#667eea")
+        ], className='col-md-3'),
+        html.Div([
+            create_metric_card("fas fa-columns", f"{len(df.columns)}", "Total Columns", "#48bb78")
+        ], className='col-md-3'),
+        html.Div([
+            create_metric_card("fas fa-chart-line", f"{len(numeric_cols)}", "Numeric Columns", "#ed8936")
+        ], className='col-md-3'),
+        html.Div([
+            create_metric_card("fas fa-exclamation-triangle", f"{missing_pct:.1f}%", "Missing Data", "#f56565")
+        ], className='col-md-3')
+    ], className='row')
     
     # Import views
     from views.dashboard_views import (
@@ -277,73 +420,55 @@ def update_tab_content(tab, n_clicks, target_col, date_col, value_col):
         ForecastingTabView, PredictionsTabView, InsightsTabView, DataTableView
     )
     
+    # Render tab content
     if tab == 'overview':
-        return OverviewTabView.render(current_df)
-    
+        content = OverviewTabView.render(df)
     elif tab == 'eda':
         if n_clicks > 0:
             try:
-                results = analyzer.analyze_and_plot(current_df, target_col)
+                results = analyzer.analyze_and_plot(df, target_col, use_cache=True)
                 analysis_results['eda'] = results
             except Exception as e:
-                return html.Div(f"Error in EDA: {str(e)}", style={'color': 'red'})
-        return EDATabView.render(analysis_results.get('eda', {}), current_df)
-    
+                content = html.Div(f"Error in EDA: {str(e)}", style={'color': 'red'})
+        else:
+            content = EDATabView.render(analysis_results.get('eda', {}), df)
     elif tab == 'visualizations':
-        return VisualizationsTabView.render(current_df, target_col)
-    
+        content = VisualizationsTabView.render(df, target_col)
     elif tab == 'forecasting':
         if n_clicks > 0 and date_col and value_col:
             try:
-                results = run_forecasting(current_df, date_col, value_col)
+                ts = forecaster.prepare_time_series(df, date_col, value_col)
+                results = forecaster.compare_forecasts(ts, FORECAST_HORIZON)
                 analysis_results['forecasting'] = results
             except Exception as e:
-                return html.Div(f"Error in forecasting: {str(e)}", style={'color': 'red'})
-        return ForecastingTabView.render(analysis_results.get('forecasting', {}))
-    
+                content = html.Div(f"Error in forecasting: {str(e)}", style={'color': 'red'})
+        else:
+            content = ForecastingTabView.render(analysis_results.get('forecasting', {}))
     elif tab == 'predictions':
         if n_clicks > 0 and target_col:
             try:
-                results = predictor.auto_train(current_df, target_col)
+                results = predictor.auto_train(df, target_col)
                 analysis_results['predictions'] = results
             except Exception as e:
-                return html.Div(f"Error in predictions: {str(e)}", style={'color': 'red'})
-        return PredictionsTabView.render(analysis_results.get('predictions', {}))
-    
+                content = html.Div(f"Error in predictions: {str(e)}", style={'color': 'red'})
+        else:
+            content = PredictionsTabView.render(analysis_results.get('predictions', {}))
     elif tab == 'insights':
         if n_clicks > 0:
             try:
-                insights = explorer.generate_insights(current_df, target_col)
+                insights = explorer.generate_insights(df, target_col)
                 analysis_results['insights'] = insights
             except Exception as e:
-                return html.Div(f"Error generating insights: {str(e)}", style={'color': 'red'})
-        return InsightsTabView.render(analysis_results.get('insights', {}))
-    
+                content = html.Div(f"Error generating insights: {str(e)}", style={'color': 'red'})
+        else:
+            content = InsightsTabView.render(analysis_results.get('insights', {}))
     elif tab == 'data-table':
-        return DataTableView.render(current_df)
+        content = DataTableView.render(df)
+    else:
+        content = html.Div("Select a tab")
     
-    return html.Div("Select a tab")
+    return metrics, content
 
-
-def run_forecasting(df, date_col, value_col):
-    """Run forecasting analysis"""
-    ts = forecaster.prepare_time_series(df, date_col, value_col)
-    results = forecaster.compare_forecasts(ts, FORECAST_HORIZON)
-    return results
-
-
-if __name__ == "__main__":
-    print("=" * 60)
-    print("🚀 Starting DataAgent Dashboard")
-    print("=" * 60)
-    print(f"\n📊 Dashboard will be available at:")
-    print(f"   → http://localhost:8050")
-    print(f"   → http://127.0.0.1:8050")
-    print(f"\n💡 Tips:")
-    print(f"   - Upload a CSV file or use the default dataset")
-    print(f"   - Select target column for predictions")
-    print(f"   - Click 'Run Full Analysis' to generate results")
-    print(f"\n⏹️  Press Ctrl+C to stop the server")
-    print("=" * 60)
-    app.run_server(debug=True, host='0.0.0.0', port=8050)
-
+# Note: This file is now a module. Use main.py as the entry point.
+# To run dashboard: python main.py --mode dashboard
+# Or: python main.py --dashboard (after analysis)
