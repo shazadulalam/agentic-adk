@@ -1,0 +1,44 @@
+name: Continuous Deployment
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        cd DataAgent
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run final tests
+      run: |
+        cd DataAgent
+        python agents/testAgent.py
+
+    - name: Build Docker image
+      run: |
+        echo "Building Docker image..."
+        # docker build -t dataagent:latest .
+        # docker push dataagent:latest
+
+    - name: Deploy
+      run: |
+        echo "Deploying application..."
+        # Add your deployment commands here
+        # Examples:
+        # - kubectl apply -f k8s/
+        # - docker-compose up -d
+        # - ansible-playbook deploy.yml

@@ -9,50 +9,136 @@ import numpy as np
 
 
 class OverviewTabView:
-    """View for overview tab"""
+    """View for overview tab with comprehensive data statistics"""
     
     @staticmethod
     def render(df: pd.DataFrame):
-        """Render overview tab content"""
+        """Render overview tab content with enhanced metrics"""
         numeric_cols = df.select_dtypes(include=[np.number]).columns
+        categorical_cols = df.select_dtypes(include=['object', 'category']).columns
+        missing_pct = (df.isnull().sum().sum() / (df.shape[0] * df.shape[1])) * 100
         
         metrics = [
             html.Div([
-                html.H4("Dataset Shape", style={'margin': '0'}),
-                html.P(f"{df.shape[0]:,} rows", style={'fontSize': '24px', 'fontWeight': 'bold', 'color': '#667eea'}),
-                html.P(f"{df.shape[1]:,} columns", style={'fontSize': '18px', 'color': '#666'})
-            ], className='metric-card'),
+                html.Div([
+                    html.I(className="fas fa-database", style={'fontSize': '32px', 'color': '#667eea', 'marginBottom': '10px'}),
+                    html.H4("Dataset Shape", style={'margin': '10px 0'}),
+                    html.P(f"{df.shape[0]:,}", style={'fontSize': '36px', 'fontWeight': 'bold', 'color': '#667eea', 'margin': '0'}),
+                    html.P("Rows", style={'fontSize': '14px', 'color': '#666', 'margin': '5px 0'}),
+                    html.P(f"{df.shape[1]:,} Columns", style={'fontSize': '18px', 'color': '#888', 'margin': '10px 0 0 0'})
+                ], style={'textAlign': 'center'})
+            ], style={
+                'background': 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                'color': 'white',
+                'padding': '30px',
+                'borderRadius': '12px',
+                'boxShadow': '0 4px 6px rgba(0,0,0,0.1)',
+                'margin': '10px',
+                'flex': '1',
+                'minWidth': '200px'
+            }),
             
             html.Div([
-                html.H4("Memory Usage", style={'margin': '0'}),
-                html.P(f"{df.memory_usage(deep=True).sum() / 1024**2:.2f} MB", 
-                      style={'fontSize': '24px', 'fontWeight': 'bold', 'color': '#667eea'})
-            ], className='metric-card'),
+                html.Div([
+                    html.I(className="fas fa-memory", style={'fontSize': '32px', 'color': '#28a745', 'marginBottom': '10px'}),
+                    html.H4("Memory Usage", style={'margin': '10px 0'}),
+                    html.P(f"{df.memory_usage(deep=True).sum() / 1024**2:.2f}", 
+                          style={'fontSize': '36px', 'fontWeight': 'bold', 'color': '#28a745', 'margin': '0'}),
+                    html.P("MB", style={'fontSize': '14px', 'color': '#666', 'margin': '5px 0'})
+                ], style={'textAlign': 'center'})
+            ], style={
+                'background': 'white',
+                'padding': '30px',
+                'borderRadius': '12px',
+                'boxShadow': '0 4px 6px rgba(0,0,0,0.1)',
+                'margin': '10px',
+                'flex': '1',
+                'minWidth': '200px',
+                'border': '2px solid #28a745'
+            }),
             
             html.Div([
-                html.H4("Missing Values", style={'margin': '0'}),
-                html.P(f"{df.isnull().sum().sum():,}", 
-                      style={'fontSize': '24px', 'fontWeight': 'bold', 'color': '#667eea'})
-            ], className='metric-card'),
+                html.Div([
+                    html.I(className="fas fa-exclamation-triangle", style={'fontSize': '32px', 'color': '#ffc107', 'marginBottom': '10px'}),
+                    html.H4("Missing Values", style={'margin': '10px 0'}),
+                    html.P(f"{df.isnull().sum().sum():,}", 
+                          style={'fontSize': '36px', 'fontWeight': 'bold', 'color': '#ffc107', 'margin': '0'}),
+                    html.P(f"({missing_pct:.1f}%)", style={'fontSize': '14px', 'color': '#666', 'margin': '5px 0'})
+                ], style={'textAlign': 'center'})
+            ], style={
+                'background': 'white',
+                'padding': '30px',
+                'borderRadius': '12px',
+                'boxShadow': '0 4px 6px rgba(0,0,0,0.1)',
+                'margin': '10px',
+                'flex': '1',
+                'minWidth': '200px',
+                'border': '2px solid #ffc107'
+            }),
             
             html.Div([
-                html.H4("Numeric Columns", style={'margin': '0'}),
-                html.P(f"{len(numeric_cols)}", 
-                      style={'fontSize': '24px', 'fontWeight': 'bold', 'color': '#667eea'})
-            ], className='metric-card')
+                html.Div([
+                    html.I(className="fas fa-chart-bar", style={'fontSize': '32px', 'color': '#17a2b8', 'marginBottom': '10px'}),
+                    html.H4("Numeric Columns", style={'margin': '10px 0'}),
+                    html.P(f"{len(numeric_cols)}", 
+                          style={'fontSize': '36px', 'fontWeight': 'bold', 'color': '#17a2b8', 'margin': '0'}),
+                    html.P(f"{len(categorical_cols)} Categorical", style={'fontSize': '14px', 'color': '#666', 'margin': '5px 0'})
+                ], style={'textAlign': 'center'})
+            ], style={
+                'background': 'white',
+                'padding': '30px',
+                'borderRadius': '12px',
+                'boxShadow': '0 4px 6px rgba(0,0,0,0.1)',
+                'margin': '10px',
+                'flex': '1',
+                'minWidth': '200px',
+                'border': '2px solid #17a2b8'
+            })
         ]
         
+        # Summary statistics for numeric columns
+        summary_stats = []
+        if len(numeric_cols) > 0:
+            summary_df = df[numeric_cols].describe().T.reset_index()
+            summary_df.columns = ['Column'] + [col for col in summary_df.columns[1:]]
+            summary_stats = summary_df.to_dict('records')
+        
         return html.Div([
-            html.Div(metrics, style={'display': 'flex', 'flexWrap': 'wrap'}),
-            html.Hr(),
-            html.H3("Column Information"),
-            dash_table.DataTable(
-                data=df.dtypes.reset_index().to_dict('records'),
-                columns=[{'name': 'Column', 'id': 'index'}, {'name': 'Data Type', 'id': 0}],
-                style_cell={'textAlign': 'left', 'padding': '10px'},
-                style_header={'backgroundColor': '#667eea', 'color': 'white', 'fontWeight': 'bold'}
-            )
-        ])
+            html.Div([
+                html.H2("📊 Dataset Overview", style={'marginBottom': '20px', 'color': '#333'}),
+                html.Div(metrics, style={'display': 'flex', 'flexWrap': 'wrap', 'justifyContent': 'space-around', 'marginBottom': '30px'}),
+            ]),
+            html.Hr(style={'margin': '30px 0'}),
+            html.Div([
+                html.H3("📋 Column Information", style={'marginBottom': '15px', 'color': '#333'}),
+                dash_table.DataTable(
+                    data=[{'Column': col, 'Data Type': str(dtype)} for col, dtype in df.dtypes.items()],
+                    columns=[{'name': 'Column', 'id': 'Column'}, {'name': 'Data Type', 'id': 'Data Type'}],
+                    style_cell={'textAlign': 'left', 'padding': '12px', 'fontFamily': 'Arial'},
+                    style_header={'backgroundColor': '#667eea', 'color': 'white', 'fontWeight': 'bold', 'fontSize': '14px'},
+                    style_data={'fontSize': '13px'},
+                    style_data_conditional=[
+                        {'if': {'row_index': 'odd'}, 'backgroundColor': '#f8f9fa'}
+                    ],
+                    page_size=15
+                )
+            ]),
+            html.Hr(style={'margin': '30px 0'}),
+            html.Div([
+                html.H3("📈 Summary Statistics (Numeric Columns)", style={'marginBottom': '15px', 'color': '#333'}),
+                dash_table.DataTable(
+                    data=summary_stats,
+                    columns=[{'name': col, 'id': col} for col in summary_df.columns] if len(numeric_cols) > 0 else [],
+                    style_cell={'textAlign': 'left', 'padding': '12px', 'fontFamily': 'Arial'},
+                    style_header={'backgroundColor': '#667eea', 'color': 'white', 'fontWeight': 'bold', 'fontSize': '14px'},
+                    style_data={'fontSize': '13px'},
+                    style_data_conditional=[
+                        {'if': {'row_index': 'odd'}, 'backgroundColor': '#f8f9fa'}
+                    ],
+                    page_size=10
+                ) if len(numeric_cols) > 0 else html.P("No numeric columns available", style={'color': '#666', 'fontStyle': 'italic'})
+            ])
+        ], style={'padding': '20px', 'backgroundColor': '#f8f9fa', 'minHeight': '100vh'})
 
 
 class EDATabView:
@@ -91,47 +177,81 @@ class EDATabView:
 
 
 class VisualizationsTabView:
-    """View for visualizations tab"""
+    """View for visualizations tab with interactive graphs"""
     
     @staticmethod
     def render(df: pd.DataFrame, target_col: str = None):
-        """Render visualizations tab content"""
+        """Render visualizations tab content with enhanced graphs"""
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         
         if len(numeric_cols) == 0:
-            return html.Div("No numeric columns available for visualization")
+            return html.Div([
+                html.Div([
+                    html.I(className="fas fa-chart-bar", style={'fontSize': '48px', 'color': '#667eea', 'marginBottom': '20px'}),
+                    html.H3("No Numeric Columns Available", style={'color': '#333'}),
+                    html.P("Upload a dataset with numeric columns to see visualizations", 
+                          style={'color': '#666', 'fontSize': '16px'})
+                ], style={'textAlign': 'center', 'padding': '40px'})
+            ], style={'backgroundColor': '#f8f9fa', 'borderRadius': '12px', 'margin': '20px'})
+        
+        content = [html.H2("📊 Interactive Data Visualizations", style={'color': '#333', 'marginBottom': '30px'})]
         
         # Correlation heatmap
         if len(numeric_cols) > 1:
-            corr_matrix = df[numeric_cols].corr()
-            fig_corr = px.imshow(corr_matrix, text_auto=True, aspect="auto",
-                                color_continuous_scale='RdBu', title="Correlation Matrix")
-        else:
-            fig_corr = None
+            # Limit to top 20 columns for performance
+            cols_to_plot = numeric_cols[:20]
+            corr_matrix = df[cols_to_plot].corr()
+            fig_corr = px.imshow(corr_matrix, text_auto='.2f', aspect="auto",
+                                color_continuous_scale='RdBu', 
+                                title="Correlation Matrix (Top 20 Features)")
+            fig_corr.update_layout(height=600, template='plotly_white')
+            content.append(html.Div([
+                html.H3("🔗 Correlation Matrix", style={'marginBottom': '15px', 'color': '#333'}),
+                dcc.Graph(figure=fig_corr)
+            ], style={'marginBottom': '30px', 'background': 'white', 'padding': '20px', 'borderRadius': '12px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}))
         
-        # Distribution plots
-        figs = []
-        for col in numeric_cols[:6]:  # Limit to 6 columns
-            fig = px.histogram(df, x=col, nbins=30, title=f"Distribution of {col}")
-            figs.append(dcc.Graph(figure=fig))
-        
-        content = [html.H2("Data Visualizations")]
-        
-        if fig_corr:
-            content.append(html.H3("Correlation Matrix"))
-            content.append(dcc.Graph(figure=fig_corr))
-        
-        content.append(html.H3("Distributions"))
-        content.extend(figs)
+        # Distribution plots in a grid
+        content.append(html.Div([
+            html.H3("📈 Distribution Plots", style={'marginBottom': '15px', 'color': '#333'}),
+            html.Div([
+                html.Div([
+                    dcc.Graph(figure=px.histogram(df, x=col, nbins=30, 
+                                                 title=f"Distribution of {col}",
+                                                 template='plotly_white').update_layout(height=300))
+                ], style={'marginBottom': '20px', 'background': 'white', 'padding': '15px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
+                for col in numeric_cols[:9]  # Limit to 9 columns
+            ])
+        ], style={'marginBottom': '30px'}))
         
         # Box plots
         if len(numeric_cols) > 0:
-            content.append(html.H3("Box Plots"))
-            for col in numeric_cols[:6]:
-                fig = px.box(df, y=col, title=f"Box Plot: {col}")
-                content.append(dcc.Graph(figure=fig))
+            content.append(html.Div([
+                html.H3("📦 Box Plots (Outlier Detection)", style={'marginBottom': '15px', 'color': '#333'}),
+                html.Div([
+                    html.Div([
+                        dcc.Graph(figure=px.box(df, y=col, title=f"Box Plot: {col}",
+                                               template='plotly_white').update_layout(height=300))
+                    ], style={'marginBottom': '20px', 'background': 'white', 'padding': '15px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
+                    for col in numeric_cols[:9]  # Limit to 9 columns
+                ])
+            ], style={'marginBottom': '30px'}))
         
-        return html.Div(content)
+        # Scatter plots for top correlated pairs
+        if len(numeric_cols) > 1 and len(df) < 10000:  # Only for smaller datasets
+            content.append(html.Div([
+                html.H3("🔍 Scatter Plots (Top Correlations)", style={'marginBottom': '15px', 'color': '#333'}),
+                html.Div([
+                    html.Div([
+                        dcc.Graph(figure=px.scatter(df, x=col1, y=col2, 
+                                                   title=f"{col1} vs {col2}",
+                                                   template='plotly_white',
+                                                   trendline='ols').update_layout(height=300))
+                    ], style={'marginBottom': '20px', 'background': 'white', 'padding': '15px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
+                    for col1, col2 in [(numeric_cols[i], numeric_cols[i+1]) for i in range(min(3, len(numeric_cols)-1))]
+                ])
+            ], style={'marginBottom': '30px'}))
+        
+        return html.Div(content, style={'padding': '20px', 'backgroundColor': '#f8f9fa', 'minHeight': '100vh'})
 
 
 class ForecastingTabView:
@@ -173,66 +293,175 @@ class ForecastingTabView:
 
 
 class PredictionsTabView:
-    """View for predictions tab"""
+    """View for predictions tab with model comparison"""
     
     @staticmethod
     def render(results: dict):
-        """Render predictions tab content"""
+        """Render predictions tab content with enhanced comparison"""
         if not results:
-            return html.Div("Select target column, then click 'Run Full Analysis'")
+            return html.Div([
+                html.Div([
+                    html.I(className="fas fa-info-circle", style={'fontSize': '48px', 'color': '#667eea', 'marginBottom': '20px'}),
+                    html.H3("No Prediction Results Available", style={'color': '#333'}),
+                    html.P("Select target column, then click 'Run Full Analysis' to generate predictions", 
+                          style={'color': '#666', 'fontSize': '16px'})
+                ], style={'textAlign': 'center', 'padding': '40px'})
+            ], style={'backgroundColor': '#f8f9fa', 'borderRadius': '12px', 'margin': '20px'})
         
-        content = [html.H2("Predictive Modeling Results")]
-        content.append(html.H3(f"Task Type: {results.get('task_type', 'Unknown').upper()}"))
-        content.append(html.H3(f"Best Model: {results.get('best_model', 'N/A')}"))
+        task_type = results.get('task_type', 'unknown')
+        best_model = results.get('best_model', 'N/A')
         
-        task_type = results.get('task_type')
+        # Header with task type and best model
+        header = html.Div([
+            html.Div([
+                html.H2("🤖 Predictive Modeling Results", style={'margin': '0', 'color': '#333'}),
+                html.Div([
+                    html.Span(f"Task Type: ", style={'fontSize': '14px', 'color': '#666'}),
+                    html.Span(f"{task_type.upper()}", 
+                            style={'fontSize': '18px', 'fontWeight': 'bold', 'color': '#667eea', 'marginLeft': '5px'})
+                ], style={'marginTop': '10px'}),
+                html.Div([
+                    html.Span(f"Best Model: ", style={'fontSize': '14px', 'color': '#666'}),
+                    html.Span(f"{best_model.replace('_', ' ').title()}", 
+                            style={'fontSize': '18px', 'fontWeight': 'bold', 'color': '#28a745', 'marginLeft': '5px'})
+                ], style={'marginTop': '5px'})
+            ])
+        ], style={
+            'background': 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            'color': 'white',
+            'padding': '25px',
+            'borderRadius': '12px',
+            'marginBottom': '30px',
+            'boxShadow': '0 4px 6px rgba(0,0,0,0.1)'
+        })
+        
+        content = [header]
+        
+        # Model comparison table
+        comparison_data = []
+        for model_name, model_results in results.items():
+            if model_name in ['task_type', 'best_model'] or 'error' in model_results:
+                continue
+            
+            if task_type == 'classification':
+                comparison_data.append({
+                    'Model': model_name.replace('_', ' ').title(),
+                    'Accuracy': f"{model_results.get('accuracy', 0):.4f}",
+                    'Precision': f"{model_results.get('precision', 0):.4f}",
+                    'Recall': f"{model_results.get('recall', 0):.4f}",
+                    'F1 Score': f"{model_results.get('f1', 0):.4f}",
+                    'CV Mean': f"{model_results.get('cv_mean', 0):.4f}" if 'cv_mean' in model_results else 'N/A',
+                    'Status': '🏆 Best' if model_name == best_model else '✓'
+                })
+            else:
+                comparison_data.append({
+                    'Model': model_name.replace('_', ' ').title(),
+                    'R² Score': f"{model_results.get('r2', 0):.4f}",
+                    'RMSE': f"{model_results.get('rmse', 0):.4f}",
+                    'MAE': f"{model_results.get('mae', 0):.4f}",
+                    'CV Mean': f"{model_results.get('cv_mean', 0):.4f}" if 'cv_mean' in model_results else 'N/A',
+                    'Status': '🏆 Best' if model_name == best_model else '✓'
+                })
+        
+        if comparison_data:
+            content.append(html.Div([
+                html.H3("📊 Model Comparison", style={'marginBottom': '15px', 'color': '#333'}),
+                dash_table.DataTable(
+                    data=comparison_data,
+                    columns=[{'name': col, 'id': col} for col in comparison_data[0].keys()],
+                    style_cell={'textAlign': 'left', 'padding': '12px', 'fontFamily': 'Arial'},
+                    style_header={'backgroundColor': '#667eea', 'color': 'white', 'fontWeight': 'bold', 'fontSize': '14px'},
+                    style_data={'fontSize': '13px'},
+                    style_data_conditional=[
+                        {'if': {'row_index': 'odd'}, 'backgroundColor': '#f8f9fa'},
+                        {'if': {'filter_query': '{Status} = 🏆 Best'}, 
+                         'backgroundColor': '#d4edda', 'fontWeight': 'bold'}
+                    ],
+                    sort_action="native",
+                    filter_action="native"
+                )
+            ], style={'marginBottom': '30px'}))
+        
+        # Individual model details with visualizations
+        content.append(html.H3("📈 Model Details & Visualizations", style={'marginBottom': '20px', 'color': '#333'}))
         
         for model_name, model_results in results.items():
             if model_name in ['task_type', 'best_model'] or 'error' in model_results:
                 continue
             
-            content.append(html.H4(f"{model_name.replace('_', ' ').title()}"))
-            
-            if task_type == 'classification':
-                metrics = [
-                    f"Accuracy: {model_results.get('accuracy', 0):.4f}",
-                    f"Precision: {model_results.get('precision', 0):.4f}",
-                    f"Recall: {model_results.get('recall', 0):.4f}",
-                    f"F1 Score: {model_results.get('f1', 0):.4f}"
-                ]
-            else:
-                metrics = [
-                    f"R² Score: {model_results.get('r2', 0):.4f}",
-                    f"RMSE: {model_results.get('rmse', 0):.4f}",
-                    f"MAE: {model_results.get('mae', 0):.4f}"
-                ]
-            
-            content.append(html.Ul([html.Li(m) for m in metrics]))
+            is_best = model_name == best_model
+            model_card = html.Div([
+                html.Div([
+                    html.H4(f"{model_name.replace('_', ' ').title()}", 
+                           style={'margin': '0', 'color': '#333'}),
+                    html.Span("🏆 Best Model" if is_best else "", 
+                            style={'marginLeft': '10px', 'color': '#28a745', 'fontWeight': 'bold'})
+                ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '15px'}),
+                
+                html.Div([
+                    html.Div([
+                        html.P("Metrics", style={'fontWeight': 'bold', 'marginBottom': '10px', 'color': '#667eea'}),
+                        html.Ul([
+                            html.Li(f"{k}: {v:.4f}" if isinstance(v, (int, float)) else f"{k}: {v}")
+                            for k, v in model_results.items()
+                            if k not in ['model', 'predictions', 'actual', 'confusion_matrix', 'classification_report', 'model_path', 'cv_std']
+                        ], style={'listStyle': 'none', 'padding': '0'})
+                    ], style={'flex': '1', 'padding': '15px', 'backgroundColor': '#f8f9fa', 'borderRadius': '8px'})
+                ], style={'display': 'flex', 'gap': '20px', 'marginBottom': '20px'})
+            ], style={
+                'background': 'white',
+                'padding': '25px',
+                'borderRadius': '12px',
+                'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+                'marginBottom': '30px',
+                'border': '3px solid #28a745' if is_best else '1px solid #ddd'
+            })
             
             # Prediction vs Actual plot
             if 'predictions' in model_results and 'actual' in model_results:
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    y=model_results['actual'],
-                    x=model_results['predictions'],
-                    mode='markers',
-                    name='Predictions vs Actual'
-                ))
-                fig.add_trace(go.Scatter(
-                    y=model_results['actual'],
-                    x=model_results['actual'],
-                    mode='lines',
-                    name='Perfect Prediction',
-                    line=dict(dash='dash', color='red')
-                ))
-                fig.update_layout(
-                    title=f"{model_name} - Predictions vs Actual",
-                    xaxis_title="Predicted",
-                    yaxis_title="Actual"
-                )
-                content.append(dcc.Graph(figure=fig))
+                try:
+                    preds = model_results['predictions']
+                    actual = model_results['actual']
+                    
+                    # Convert to lists if needed
+                    if hasattr(preds, 'values'):
+                        preds = preds.values if hasattr(preds, 'values') else list(preds)
+                    if hasattr(actual, 'values'):
+                        actual = actual.values if hasattr(actual, 'values') else list(actual)
+                    
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=preds,
+                        y=actual,
+                        mode='markers',
+                        name='Predictions vs Actual',
+                        marker=dict(color='#667eea', size=5, opacity=0.6)
+                    ))
+                    fig.add_trace(go.Scatter(
+                        x=actual,
+                        y=actual,
+                        mode='lines',
+                        name='Perfect Prediction',
+                        line=dict(dash='dash', color='red', width=2)
+                    ))
+                    fig.update_layout(
+                        title=f"{model_name.replace('_', ' ').title()} - Predictions vs Actual",
+                        xaxis_title="Predicted",
+                        yaxis_title="Actual",
+                        template='plotly_white',
+                        height=400
+                    )
+                    
+                    model_card.children.append(html.Div([
+                        dcc.Graph(figure=fig)
+                    ], style={'marginTop': '20px'}))
+                except Exception as e:
+                    model_card.children.append(html.P(f"Could not generate plot: {str(e)}", 
+                                                       style={'color': 'red', 'fontSize': '12px'}))
+            
+            content.append(model_card)
         
-        return html.Div(content)
+        return html.Div(content, style={'padding': '20px', 'backgroundColor': '#f8f9fa', 'minHeight': '100vh'})
 
 
 class InsightsTabView:

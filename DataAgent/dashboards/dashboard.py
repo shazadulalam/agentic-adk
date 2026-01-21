@@ -89,6 +89,16 @@ app.index_string = '''
 current_df = None
 analysis_results = {}
 
+# Try to load default dataset on startup
+try:
+    default_data_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                     'datasets', 'bq-results-covid-open-data.csv')
+    if os.path.exists(default_data_path):
+        current_df = pd.read_csv(default_data_path, nrows=10000)  # Load first 10k rows for dashboard
+        print(f"✓ Loaded default dataset: {len(current_df)} rows")
+except Exception as e:
+    print(f"Could not load default dataset: {e}")
+
 # App layout
 app.layout = html.Div([
     # Header
@@ -200,6 +210,18 @@ def update_columns(contents, filename):
     global current_df
     
     if contents is None:
+        # Return options for default dataset if available
+        if current_df is not None:
+            options = [{'label': col, 'value': col} for col in current_df.columns]
+            date_options = []
+            for col in current_df.columns:
+                if current_df[col].dtype == 'datetime64[ns]' or 'date' in col.lower() or 'time' in col.lower():
+                    date_options.append({'label': col, 'value': col})
+            numeric_options = [{'label': col, 'value': col} for col in current_df.select_dtypes(include=[np.number]).columns]
+            return options, date_options, numeric_options, html.Div(
+                f"✅ Default dataset loaded: {len(current_df):,} rows × {len(current_df.columns)} columns", 
+                style={'color': 'green', 'fontWeight': 'bold'}
+            )
         return [], [], [], ""
     
     try:
@@ -311,5 +333,17 @@ def run_forecasting(df, date_col, value_col):
 
 
 if __name__ == "__main__":
+    print("=" * 60)
+    print("🚀 Starting DataAgent Dashboard")
+    print("=" * 60)
+    print(f"\n📊 Dashboard will be available at:")
+    print(f"   → http://localhost:8050")
+    print(f"   → http://127.0.0.1:8050")
+    print(f"\n💡 Tips:")
+    print(f"   - Upload a CSV file or use the default dataset")
+    print(f"   - Select target column for predictions")
+    print(f"   - Click 'Run Full Analysis' to generate results")
+    print(f"\n⏹️  Press Ctrl+C to stop the server")
+    print("=" * 60)
     app.run_server(debug=True, host='0.0.0.0', port=8050)
 

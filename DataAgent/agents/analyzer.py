@@ -7,6 +7,8 @@ from scipy.stats import normaltest, shapiro
 import warnings
 warnings.filterwarnings('ignore')
 import os
+import hashlib
+import pickle
 from config import *
 
 class ModelAnalyzer:
@@ -16,7 +18,9 @@ class ModelAnalyzer:
 
     def __init__(self):
         self.reports_dir = REPORTS_DIR
+        self.cache_dir = os.path.join(REPORTS_DIR, 'cache')
         os.makedirs(self.reports_dir, exist_ok=True)
+        os.makedirs(self.cache_dir, exist_ok=True)
         try:
             plt.style.use('seaborn-v0_8-darkgrid')
         except:
@@ -25,33 +29,105 @@ class ModelAnalyzer:
             except:
                 plt.style.use('default')
         sns.set_palette("husl")
+    
+    def _get_cache_key(self, df: pd.DataFrame, target_col: str = None) -> str:
+        """Generate cache key based on dataframe hash and target column"""
+        # Create hash from dataframe shape, column names, and sample data
+        df_hash = hashlib.md5(
+            f"{df.shape}_{list(df.columns)}_{df.head(100).to_string()}".encode()
+        ).hexdigest()
+        cache_key = f"eda_{df_hash}_{target_col or 'none'}"
+        return cache_key
+    
+    def _load_from_cache(self, cache_key: str) -> dict:
+        """Load EDA results from cache if available"""
+        cache_file = os.path.join(self.cache_dir, f"{cache_key}.pkl")
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, 'rb') as f:
+                    return pickle.load(f)
+            except:
+                return None
+        return None
+    
+    def _save_to_cache(self, cache_key: str, results: dict):
+        """Save EDA results to cache"""
+        cache_file = os.path.join(self.cache_dir, f"{cache_key}.pkl")
+        try:
+            with open(cache_file, 'wb') as f:
+                pickle.dump(results, f)
+        except Exception as e:
+            print(f"Warning: Could not save cache: {e}")
 
-    def analyze_and_plot(self, df: pd.DataFrame, target_col: str = None) -> dict:
+    def analyze_and_plot(self, df: pd.DataFrame, target_col: str = None, use_cache: bool = True) -> dict:
         """
         Comprehensive EDA with multiple visualizations and statistical analysis
+        Uses caching to avoid re-processing the same dataset
+        Limits to top columns to prevent memory issues
         """
+        # Limit columns for EDA to prevent memory/image size issues
+        MAX_EDA_COLS = 30
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        if len(numeric_cols) > MAX_EDA_COLS:
+            print(f"⚠ Limiting EDA to top {MAX_EDA_COLS} numeric columns (out of {len(numeric_cols)}) to prevent memory issues")
+            # Select top columns (prioritize those with less missing data)
+            missing_pct = df[numeric_cols].isnull().sum() / len(df)
+            top_cols = missing_pct.nsmallest(MAX_EDA_COLS).index.tolist()
+            df_eda = df[top_cols + ([target_col] if target_col and target_col in df.columns else [])].copy()
+        else:
+            df_eda = df.copy()
+        
+        # Check cache first
+        if use_cache:
+            cache_key = self._get_cache_key(df_eda, target_col)
+            cached_results = self._load_from_cache(cache_key)
+            if cached_results is not None:
+                print("✓ Using cached EDA results (dataset already analyzed - skipping computation)")
+                # Check if visualization files exist, regenerate if missing
+                viz_files = ['correlation_matrix.png', 'distributions.png', 'boxplots.png']
+                if target_col:
+                    viz_files.append('target_analysis.png')
+                
+                missing_viz = [f for f in viz_files if not os.path.exists(os.path.join(self.reports_dir, f))]
+                if missing_viz:
+                    print(f"  Regenerating {len(missing_viz)} missing visualization(s)...")
+                    self._generate_visualizations(df_eda, target_col)
+                else:
+                    print("  All visualizations already exist")
+                
+                return cached_results
+        
+        # Perform fresh analysis
+        print("  Performing fresh EDA analysis...")
         results = {}
         
-        # Basic statistics
+        # Basic statistics (on full dataset for completeness)
         results['basic_stats'] = self._basic_statistics(df)
         
-        # Data quality report
+        # Data quality report (on full dataset)
         results['data_quality'] = self._data_quality_report(df)
         
-        # Correlation analysis
-        results['correlation'] = self._correlation_analysis(df)
+        # Correlation analysis (on limited dataset)
+        results['correlation'] = self._correlation_analysis(df_eda)
         
-        # Distribution analysis
-        results['distributions'] = self._distribution_analysis(df)
+        # Distribution analysis (on limited dataset)
+        results['distributions'] = self._distribution_analysis(df_eda)
         
-        # Outlier detection
-        results['outliers'] = self._outlier_analysis(df)
+        # Outlier detection (on limited dataset)
+        results['outliers'] = self._outlier_analysis(df_eda)
         
-        # Generate visualizations
-        self._generate_visualizations(df, target_col)
+        # Generate visualizations (on limited dataset)
+        self._generate_visualizations(df_eda, target_col)
         
         # Generate HTML report
         results['html_report'] = self._generate_html_report(df, results)
+        
+        # Save to cache
+        if use_cache:
+            cache_key = self._get_cache_key(df_eda, target_col)
+            self._save_to_cache(cache_key, results)
+            print("✓ EDA results cached for future use")
         
         return results
 
@@ -78,9 +154,11 @@ class ModelAnalyzer:
 
     def _data_quality_report(self, df: pd.DataFrame) -> dict:
         """Generate data quality report"""
+        missing_values = df.isnull().sum()
+        
         quality_report = {
-            'missing_values': df.isnull().sum().to_dict(),
-            'missing_percentage': (df.isnull().sum() / len(df) * 100).to_dict(),
+            'missing_values': missing_values.to_dict(),
+            'missing_percentage': (missing_values / len(df) * 100).to_dict(),
             'duplicate_rows': df.duplicated().sum(),
             'data_types': df.dtypes.to_dict(),
             'columns_with_high_missing': []
@@ -106,21 +184,22 @@ class ModelAnalyzer:
         corr_matrix = df[numeric_cols].corr()
         
         # Find highly correlated pairs
+        corr_values = corr_matrix.values
         high_corr_pairs = []
         for i in range(len(corr_matrix.columns)):
             for j in range(i+1, len(corr_matrix.columns)):
-                corr_val = corr_matrix.iloc[i, j]
+                corr_val = corr_values[i, j]
                 if abs(corr_val) > 0.7:
                     high_corr_pairs.append({
                         'col1': corr_matrix.columns[i],
                         'col2': corr_matrix.columns[j],
-                        'correlation': corr_val
+                        'correlation': float(corr_val)
                     })
         
         return {
             'correlation_matrix': corr_matrix.to_dict(),
             'high_correlation_pairs': high_corr_pairs,
-            'mean_absolute_correlation': corr_matrix.abs().mean().mean()
+            'mean_absolute_correlation': float(corr_matrix.abs().mean().mean())
         }
 
     def _distribution_analysis(self, df: pd.DataFrame) -> dict:
@@ -184,65 +263,88 @@ class ModelAnalyzer:
         return outliers
 
     def _generate_visualizations(self, df: pd.DataFrame, target_col: str = None):
-        """Generate comprehensive visualizations"""
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        """Generate comprehensive visualizations with safe limits to prevent memory issues"""
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         
-        # 1. Correlation Heatmap
+        # Limit columns to prevent image size issues
+        MAX_VIS_COLS = 20
+        if len(numeric_cols) > MAX_VIS_COLS:
+            numeric_cols = numeric_cols[:MAX_VIS_COLS]
+        
+        # 1. Correlation Heatmap (bounded size)
         if len(numeric_cols) > 1:
-            plt.figure(figsize=(12, 10))
+            plt.figure(figsize=(min(12, len(numeric_cols)), min(10, len(numeric_cols))))
             corr = df[numeric_cols].corr()
-            sns.heatmap(corr, annot=True, fmt='.2f', cmap='coolwarm', center=0,
-                       square=True, linewidths=1, cbar_kws={"shrink": 0.8})
-            plt.title('Correlation Matrix', fontsize=16, fontweight='bold')
+            # Only annotate if small enough
+            annot = len(numeric_cols) <= 15
+            sns.heatmap(corr, annot=annot, fmt='.2f', cmap='coolwarm', center=0,
+                       square=True, linewidths=0.5, cbar_kws={"shrink": 0.8})
+            plt.title('Correlation Matrix (Top Features)', fontsize=16, fontweight='bold')
             plt.tight_layout()
-            plt.savefig(f"{self.reports_dir}/correlation_matrix.png", dpi=300, bbox_inches='tight')
+            plt.savefig(f"{self.reports_dir}/correlation_matrix.png", dpi=150, bbox_inches='tight')
             plt.close()
         
-        # 2. Distribution plots for numeric columns
-        n_cols = len(numeric_cols)
-        if n_cols > 0:
-            n_rows = (n_cols + 2) // 3
-            fig, axes = plt.subplots(n_rows, 3, figsize=(15, 5*n_rows))
-            axes = axes.flatten() if n_cols > 1 else [axes]
+        # 2. Distribution plots - individual plots to avoid size issues
+        if len(numeric_cols) > 0:
+            # Limit to 9 columns max, create grid with capped height
+            n_plot = min(9, len(numeric_cols))
+            n_rows = (n_plot + 2) // 3
+            max_height = min(5 * n_rows, 30)  # Cap at 30 inches
+            fig, axes = plt.subplots(n_rows, 3, figsize=(15, max_height))
             
-            for idx, col in enumerate(numeric_cols[:9]):  # Limit to 9 plots
-                ax = axes[idx]
-                df[col].hist(bins=30, ax=ax, edgecolor='black', alpha=0.7)
-                ax.set_title(f'Distribution of {col}', fontweight='bold')
-                ax.set_xlabel(col)
-                ax.set_ylabel('Frequency')
-                ax.grid(True, alpha=0.3)
+            # Flatten axes array properly
+            if n_rows == 1:
+                if isinstance(axes, np.ndarray):
+                    axes = axes.flatten()
+                else:
+                    axes = [axes]
+            else:
+                axes = axes.flatten()
+            
+            for idx, col in enumerate(numeric_cols[:n_plot]):
+                if idx < len(axes):
+                    ax = axes[idx]
+                    df[col].hist(bins=30, ax=ax, edgecolor='black', alpha=0.7)
+                    ax.set_title(f'Distribution of {col}', fontweight='bold', fontsize=10)
+                    ax.set_xlabel(col, fontsize=8)
+                    ax.set_ylabel('Frequency', fontsize=8)
+                    ax.grid(True, alpha=0.3)
             
             # Hide extra subplots
-            for idx in range(len(numeric_cols), len(axes)):
-                axes[idx].set_visible(False)
+            for idx in range(n_plot, len(axes)):
+                if idx < len(axes):
+                    axes[idx].set_visible(False)
             
             plt.tight_layout()
-            plt.savefig(f"{self.reports_dir}/distributions.png", dpi=300, bbox_inches='tight')
+            plt.savefig(f"{self.reports_dir}/distributions.png", dpi=150, bbox_inches='tight')
             plt.close()
         
-        # 3. Box plots for outlier visualization
+        # 3. Box plots for outlier visualization (limited)
         if len(numeric_cols) > 0:
             n_cols_plot = min(6, len(numeric_cols))
-            fig, axes = plt.subplots(1, n_cols_plot, figsize=(5*n_cols_plot, 6))
+            fig, axes = plt.subplots(1, n_cols_plot, figsize=(min(5*n_cols_plot, 30), 6))
             if n_cols_plot == 1:
                 axes = [axes]
             
             for idx, col in enumerate(numeric_cols[:n_cols_plot]):
-                ax = axes[idx]
-                df.boxplot(column=col, ax=ax, grid=True)
-                ax.set_title(f'Box Plot: {col}', fontweight='bold')
-                ax.set_ylabel('Value')
+                if idx < len(axes):
+                    ax = axes[idx]
+                    df.boxplot(column=col, ax=ax, grid=True)
+                    ax.set_title(f'Box Plot: {col}', fontweight='bold', fontsize=10)
+                    ax.set_ylabel('Value', fontsize=8)
             
             plt.tight_layout()
-            plt.savefig(f"{self.reports_dir}/boxplots.png", dpi=300, bbox_inches='tight')
+            plt.savefig(f"{self.reports_dir}/boxplots.png", dpi=150, bbox_inches='tight')
             plt.close()
         
-        # 4. Pair plot (if reasonable number of columns)
-        if len(numeric_cols) <= 6 and len(df) < 10000:
-            sns.pairplot(df[numeric_cols], diag_kind='kde')
-            plt.savefig(f"{self.reports_dir}/pairplot.png", dpi=300, bbox_inches='tight')
-            plt.close()
+        # 4. Pair plot (only for very small datasets)
+        if len(numeric_cols) <= 6 and len(df) < 5000:
+            try:
+                sns.pairplot(df[numeric_cols], diag_kind='kde')
+                plt.savefig(f"{self.reports_dir}/pairplot.png", dpi=150, bbox_inches='tight')
+                plt.close()
+            except:
+                pass  # Skip if fails
         
         # 5. Target variable analysis (if provided)
         if target_col and target_col in df.columns:
@@ -256,21 +358,26 @@ class ModelAnalyzer:
                 plt.ylabel('Frequency')
                 
                 plt.subplot(1, 2, 2)
-                stats.probplot(df[target_col].dropna(), dist="norm", plot=plt)
+                # Sample for Q-Q plot if too large
+                sample_data = df[target_col].dropna()
+                if len(sample_data) > 10000:
+                    sample_data = sample_data.sample(10000, random_state=42)
+                stats.probplot(sample_data, dist="norm", plot=plt)
                 plt.title(f'Q-Q Plot: {target_col}', fontweight='bold')
                 plt.tight_layout()
-                plt.savefig(f"{self.reports_dir}/target_analysis.png", dpi=300, bbox_inches='tight')
+                plt.savefig(f"{self.reports_dir}/target_analysis.png", dpi=150, bbox_inches='tight')
                 plt.close()
             else:
                 # Classification target
                 plt.figure(figsize=(10, 6))
-                df[target_col].value_counts().plot(kind='bar', edgecolor='black', alpha=0.7)
+                value_counts = df[target_col].value_counts().head(20)  # Limit to top 20
+                value_counts.plot(kind='bar', edgecolor='black', alpha=0.7)
                 plt.title(f'Distribution of {target_col}', fontweight='bold')
                 plt.xlabel(target_col)
                 plt.ylabel('Count')
                 plt.xticks(rotation=45)
                 plt.tight_layout()
-                plt.savefig(f"{self.reports_dir}/target_analysis.png", dpi=300, bbox_inches='tight')
+                plt.savefig(f"{self.reports_dir}/target_analysis.png", dpi=150, bbox_inches='tight')
                 plt.close()
 
     def _generate_html_report(self, df: pd.DataFrame, results: dict) -> str:
