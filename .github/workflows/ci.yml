@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.8', '3.9', '3.10', '3.11']
+        python-version: ['3.9', '3.10', '3.11', '3.12']
 
     steps:
     - uses: actions/checkout@v3
@@ -53,13 +53,14 @@ jobs:
     - name: Run tests
       run: |
         cd DataAgent
-        python agents/testAgent.py
+        python agents/testAgent.py || exit 1
       continue-on-error: false
 
     - name: Test imports
       run: |
         cd DataAgent
-        python -c "from agents.cleanerAgent import Cleaner; from agents.analyzer import ModelAnalyzer; from models.model_factory import ModelFactory; print('All imports successful')"
+        python -c "from agents.cleanerAgent import Cleaner; from agents.analyzer import ModelAnalyzer; from models.model_factory import ModelFactory; print('All imports successful')" || exit 1
+      continue-on-error: false
 
   build:
     runs-on: ubuntu-latest
