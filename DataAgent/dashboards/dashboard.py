@@ -218,7 +218,7 @@ app.layout = html.Div([
     [State('upload-data', 'filename')]
 )
 def handle_upload(contents, filename):
-    global current_df, filtered_df, date_column_detected
+    global current_df, filtered_df
     
     if contents is None:
         # Return default dataset options
@@ -314,7 +314,7 @@ def handle_upload(contents, filename):
      State('data-store', 'data')]
 )
 def filter_by_date(apply_clicks, clear_clicks, start_date, end_date, date_col, data):
-    global filtered_df, current_df
+    global filtered_df
     
     ctx = callback_context
     if not ctx.triggered:
@@ -375,7 +375,7 @@ def filter_by_date(apply_clicks, clear_clicks, start_date, end_date, date_col, d
      State('data-store', 'data')]
 )
 def update_content(tab, n_clicks, filtered_data, target_col, date_col, value_col, original_data):
-    global filtered_df, current_df, analysis_results
+    global filtered_df, analysis_results
     
     # Use filtered data if available, otherwise original
     if filtered_data:
