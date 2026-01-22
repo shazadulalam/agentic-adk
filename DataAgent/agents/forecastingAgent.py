@@ -55,8 +55,8 @@ class ForecastingAgent:
         df[date_col] = pd.to_datetime(df[date_col])
         df = df.sort_values(date_col)
         ts = df.set_index(date_col)[value_col]
-        ts = ts.asfreq(freq, method='ffill')
-        ts = ts.fillna(method='bfill')
+        ts = ts.asfreq(freq).ffill()
+        ts = ts.bfill()
         return ts
     
     def check_stationarity(self, ts: pd.Series) -> dict:
