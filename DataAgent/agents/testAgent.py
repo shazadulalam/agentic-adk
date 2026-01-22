@@ -162,15 +162,20 @@ class TestAgent:
                 self.results['passed'].append("Forecasting Agent - ARIMA")
                 print("✓ ARIMA works correctly")
             
-            # Test Prophet
-            prophet_result = forecaster.forecast_prophet(df, 'date', 'value', forecast_periods=30)
-            if 'error' in prophet_result:
-                self.results['failed'].append(f"Forecasting Agent - Prophet: {prophet_result['error']}")
-                print(f"✗ Prophet failed: {prophet_result['error']}")
+            # Test Prophet (skip if not installed)
+            from agents.forecastingAgent import PROPHET_AVAILABLE
+            if PROPHET_AVAILABLE:
+                prophet_result = forecaster.forecast_prophet(df, 'date', 'value', forecast_periods=30)
+                if 'error' in prophet_result:
+                    self.results['failed'].append(f"Forecasting Agent - Prophet: {prophet_result['error']}")
+                    print(f"✗ Prophet failed: {prophet_result['error']}")
+                else:
+                    assert 'forecast' in prophet_result, "Prophet should return forecast"
+                    self.results['passed'].append("Forecasting Agent - Prophet")
+                    print("✓ Prophet works correctly")
             else:
-                assert 'forecast' in prophet_result, "Prophet should return forecast"
-                self.results['passed'].append("Forecasting Agent - Prophet")
-                print("✓ Prophet works correctly")
+                self.results['warnings'].append("Forecasting Agent - Prophet: Skipped (Prophet not installed)")
+                print("⚠ Prophet test skipped (Prophet not installed)")
             
         except AssertionError as e:
             self.results['failed'].append(f"Forecasting Agent: {str(e)}")
