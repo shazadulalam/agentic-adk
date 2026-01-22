@@ -154,16 +154,27 @@ class TestAgent:
             
             # Test ARIMA
             arima_result = forecaster.forecast_arima(ts, forecast_periods=30)
-            assert 'forecast' in arima_result, "ARIMA should return forecast"
+            if 'error' in arima_result:
+                self.results['failed'].append(f"Forecasting Agent - ARIMA: {arima_result['error']}")
+                print(f"✗ ARIMA failed: {arima_result['error']}")
+            else:
+                assert 'forecast' in arima_result, "ARIMA should return forecast"
+                self.results['passed'].append("Forecasting Agent - ARIMA")
+                print("✓ ARIMA works correctly")
             
             # Test Prophet
             prophet_result = forecaster.forecast_prophet(df, 'date', 'value', forecast_periods=30)
-            assert 'forecast' in prophet_result, "Prophet should return forecast"
+            if 'error' in prophet_result:
+                self.results['failed'].append(f"Forecasting Agent - Prophet: {prophet_result['error']}")
+                print(f"✗ Prophet failed: {prophet_result['error']}")
+            else:
+                assert 'forecast' in prophet_result, "Prophet should return forecast"
+                self.results['passed'].append("Forecasting Agent - Prophet")
+                print("✓ Prophet works correctly")
             
-            self.results['passed'].append("Forecasting Agent - ARIMA")
-            self.results['passed'].append("Forecasting Agent - Prophet")
-            print("✓ Forecasting Agent: ARIMA and Prophet work correctly")
-            
+        except AssertionError as e:
+            self.results['failed'].append(f"Forecasting Agent: {str(e)}")
+            print(f"✗ Forecasting Agent failed: {str(e)}")
         except Exception as e:
             self.results['failed'].append(f"Forecasting Agent: {str(e)}")
             print(f"✗ Forecasting Agent failed: {str(e)}")

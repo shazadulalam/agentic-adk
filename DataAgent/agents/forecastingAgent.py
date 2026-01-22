@@ -144,41 +144,55 @@ class ForecastingAgent:
                 'error': 'Prophet is not installed. Install it with: pip install prophet'
             }
         
-        # Prepare data for Prophet
-        prophet_df = df[[date_col, value_col]].copy()
-        prophet_df.columns = ['ds', 'y']
-        prophet_df['ds'] = pd.to_datetime(prophet_df['ds'])
-        prophet_df = prophet_df.sort_values('ds')
-        
-        # Initialize Prophet model
-        if seasonality:
-            model = Prophet(**seasonality)
-        else:
-            model = Prophet(
-                yearly_seasonality=True,
-                weekly_seasonality=True,
-                daily_seasonality=False
-            )
-        
-        # Fit model
-        model.fit(prophet_df)
-        
-        # Create future dataframe
-        future = model.make_future_dataframe(periods=forecast_periods, freq='D')
-        
-        # Forecast
-        forecast_df = model.predict(future)
-        
-        # Save model
-        model_path = os.path.join(self.models_dir, 'prophet_model.pkl')
-        joblib.dump(model, model_path)
-        
-        return {
-            'forecast': forecast_df[['ds', 'yhat', 'yhat_lower', 'yhat_upper']],
-            'model': model,
-            'model_path': model_path,
-            'components': model.plot_components(forecast_df) if hasattr(model, 'plot_components') else None
-        }
+        try:
+            # Prepare data for Prophet
+            prophet_df = df[[date_col, value_col]].copy()
+            prophet_df.columns = ['ds', 'y']
+            prophet_df['ds'] = pd.to_datetime(prophet_df['ds'])
+            prophet_df = prophet_df.sort_values('ds')
+            
+            # Remove any NaN values
+            prophet_df = prophet_df.dropna()
+            
+            # Check if we have enough data
+            if len(prophet_df) < 2:
+                return {
+                    'error': 'Not enough data for Prophet forecasting. Need at least 2 data points.'
+                }
+            
+            # Initialize Prophet model
+            if seasonality:
+                model = Prophet(**seasonality)
+            else:
+                model = Prophet(
+                    yearly_seasonality=True,
+                    weekly_seasonality=True,
+                    daily_seasonality=False
+                )
+            
+            # Fit model
+            model.fit(prophet_df)
+            
+            # Create future dataframe
+            future = model.make_future_dataframe(periods=forecast_periods, freq='D')
+            
+            # Forecast
+            forecast_df = model.predict(future)
+            
+            # Save model
+            model_path = os.path.join(self.models_dir, 'prophet_model.pkl')
+            joblib.dump(model, model_path)
+            
+            return {
+                'forecast': forecast_df[['ds', 'yhat', 'yhat_lower', 'yhat_upper']],
+                'model': model,
+                'model_path': model_path,
+                'components': model.plot_components(forecast_df) if hasattr(model, 'plot_components') else None
+            }
+        except Exception as e:
+            return {
+                'error': f'Prophet forecasting failed: {str(e)}'
+            }
     
     def forecast_lstm(self, ts: pd.Series, forecast_periods: int = 30, 
                      lookback: int = 60, epochs: int = 50) -> dict:
