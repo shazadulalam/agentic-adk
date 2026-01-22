@@ -99,6 +99,12 @@ from views.html_components import get_html_generator
 
 html_gen = get_html_generator()
 
+# Import views at module level (optimization)
+from views.dashboard_views import (
+    OverviewTabView, EDATabView, VisualizationsTabView,
+    ForecastingTabView, PredictionsTabView, InsightsTabView, DataTableView
+)
+
 def create_metric_card(icon, value, label, color="#667eea"):
     """Create a metric card component using HTML template"""
     return html_gen.metric_card(icon, str(value), label, color)
@@ -375,7 +381,7 @@ def filter_by_date(apply_clicks, clear_clicks, start_date, end_date, date_col, d
      State('data-store', 'data')]
 )
 def update_content(tab, n_clicks, filtered_data, target_col, date_col, value_col, original_data):
-    global filtered_df, analysis_results
+    global filtered_df
     
     # Use filtered data if available, otherwise original
     if filtered_data:
@@ -395,30 +401,15 @@ def update_content(tab, n_clicks, filtered_data, target_col, date_col, value_col
     
     # Calculate metrics
     numeric_cols = df.select_dtypes(include=[np.number]).columns
-    categorical_cols = df.select_dtypes(include=['object', 'category']).columns
     missing_pct = (df.isnull().sum().sum() / (df.shape[0] * df.shape[1])) * 100 if df.shape[0] > 0 else 0
     
     # Create metric cards
     metrics = html.Div([
-        html.Div([
-            create_metric_card("fas fa-database", f"{len(df):,}", "Total Rows", "#667eea")
-        ], className='col-md-3'),
-        html.Div([
-            create_metric_card("fas fa-columns", f"{len(df.columns)}", "Total Columns", "#48bb78")
-        ], className='col-md-3'),
-        html.Div([
-            create_metric_card("fas fa-chart-line", f"{len(numeric_cols)}", "Numeric Columns", "#ed8936")
-        ], className='col-md-3'),
-        html.Div([
-            create_metric_card("fas fa-exclamation-triangle", f"{missing_pct:.1f}%", "Missing Data", "#f56565")
-        ], className='col-md-3')
+        html.Div([create_metric_card("fas fa-database", f"{len(df):,}", "Total Rows", "#667eea")], className='col-md-3'),
+        html.Div([create_metric_card("fas fa-columns", f"{len(df.columns)}", "Total Columns", "#48bb78")], className='col-md-3'),
+        html.Div([create_metric_card("fas fa-chart-line", f"{len(numeric_cols)}", "Numeric Columns", "#ed8936")], className='col-md-3'),
+        html.Div([create_metric_card("fas fa-exclamation-triangle", f"{missing_pct:.1f}%", "Missing Data", "#f56565")], className='col-md-3')
     ], className='row')
-    
-    # Import views
-    from views.dashboard_views import (
-        OverviewTabView, EDATabView, VisualizationsTabView,
-        ForecastingTabView, PredictionsTabView, InsightsTabView, DataTableView
-    )
     
     # Render tab content
     if tab == 'overview':
@@ -426,8 +417,8 @@ def update_content(tab, n_clicks, filtered_data, target_col, date_col, value_col
     elif tab == 'eda':
         if n_clicks > 0:
             try:
-                results = analyzer.analyze_and_plot(df, target_col, use_cache=True)
-                analysis_results['eda'] = results
+                analysis_results['eda'] = analyzer.analyze_and_plot(df, target_col, use_cache=True)
+                content = EDATabView.render(analysis_results.get('eda', {}), df)
             except Exception as e:
                 content = html.Div(f"Error in EDA: {str(e)}", style={'color': 'red'})
         else:
@@ -438,8 +429,8 @@ def update_content(tab, n_clicks, filtered_data, target_col, date_col, value_col
         if n_clicks > 0 and date_col and value_col:
             try:
                 ts = forecaster.prepare_time_series(df, date_col, value_col)
-                results = forecaster.compare_forecasts(ts, FORECAST_HORIZON)
-                analysis_results['forecasting'] = results
+                analysis_results['forecasting'] = forecaster.compare_forecasts(ts, FORECAST_HORIZON)
+                content = ForecastingTabView.render(analysis_results.get('forecasting', {}))
             except Exception as e:
                 content = html.Div(f"Error in forecasting: {str(e)}", style={'color': 'red'})
         else:
@@ -447,8 +438,8 @@ def update_content(tab, n_clicks, filtered_data, target_col, date_col, value_col
     elif tab == 'predictions':
         if n_clicks > 0 and target_col:
             try:
-                results = predictor.auto_train(df, target_col)
-                analysis_results['predictions'] = results
+                analysis_results['predictions'] = predictor.auto_train(df, target_col)
+                content = PredictionsTabView.render(analysis_results.get('predictions', {}))
             except Exception as e:
                 content = html.Div(f"Error in predictions: {str(e)}", style={'color': 'red'})
         else:
@@ -456,8 +447,8 @@ def update_content(tab, n_clicks, filtered_data, target_col, date_col, value_col
     elif tab == 'insights':
         if n_clicks > 0:
             try:
-                insights = explorer.generate_insights(df, target_col)
-                analysis_results['insights'] = insights
+                analysis_results['insights'] = explorer.generate_insights(df, target_col)
+                content = InsightsTabView.render(analysis_results.get('insights', {}))
             except Exception as e:
                 content = html.Div(f"Error generating insights: {str(e)}", style={'color': 'red'})
         else:
