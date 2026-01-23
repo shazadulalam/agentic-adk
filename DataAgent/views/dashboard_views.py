@@ -6,6 +6,15 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
+import sys
+import os
+
+# Add parent directory to path for feature_engineering import
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+from feature_engineering import FeatureEngineeringStrategies
 
 
 class OverviewTabView:
@@ -109,36 +118,64 @@ class OverviewTabView:
                 html.Div(metrics, style={'display': 'flex', 'flexWrap': 'wrap', 'justifyContent': 'space-around', 'marginBottom': '30px'}),
             ]),
             html.Hr(style={'margin': '30px 0'}),
-            html.Div([
-                html.H3("📋 Column Information", style={'marginBottom': '15px', 'color': '#333'}),
-                dash_table.DataTable(
-                    data=[{'Column': col, 'Data Type': str(dtype)} for col, dtype in df.dtypes.items()],
-                    columns=[{'name': 'Column', 'id': 'Column'}, {'name': 'Data Type', 'id': 'Data Type'}],
-                    style_cell={'textAlign': 'left', 'padding': '12px', 'fontFamily': 'Arial'},
-                    style_header={'backgroundColor': '#667eea', 'color': 'white', 'fontWeight': 'bold', 'fontSize': '14px'},
-                    style_data={'fontSize': '13px'},
-                    style_data_conditional=[
-                        {'if': {'row_index': 'odd'}, 'backgroundColor': '#f8f9fa'}
-                    ],
-                    page_size=15
-                )
-            ]),
-            html.Hr(style={'margin': '30px 0'}),
-            html.Div([
-                html.H3("📈 Summary Statistics (Numeric Columns)", style={'marginBottom': '15px', 'color': '#333'}),
-                dash_table.DataTable(
-                    data=summary_stats,
-                    columns=[{'name': col, 'id': col} for col in summary_df.columns] if len(numeric_cols) > 0 else [],
-                    style_cell={'textAlign': 'left', 'padding': '12px', 'fontFamily': 'Arial'},
-                    style_header={'backgroundColor': '#667eea', 'color': 'white', 'fontWeight': 'bold', 'fontSize': '14px'},
-                    style_data={'fontSize': '13px'},
-                    style_data_conditional=[
-                        {'if': {'row_index': 'odd'}, 'backgroundColor': '#f8f9fa'}
-                    ],
-                    page_size=10
-                ) if len(numeric_cols) > 0 else html.P("No numeric columns available", style={'color': '#666', 'fontStyle': 'italic'})
-            ])
+            # Feature Engineering Strategies Section
+            OverviewTabView._render_feature_engineering_strategies()
         ], style={'padding': '20px', 'backgroundColor': '#f8f9fa', 'minHeight': '100vh'})
+    
+    @staticmethod
+    def _render_feature_engineering_strategies():
+        """Render feature engineering strategies in Bootstrap cards"""
+        fe = FeatureEngineeringStrategies()
+        strategies = fe.get_strategy_summary()
+        
+        # Color scheme for cards
+        colors = ['#667eea', '#48bb78', '#ed8936', '#f56565', '#9f7aea', '#4299e1']
+        
+        strategy_cards = []
+        for idx, strategy in enumerate(strategies):
+            color = colors[idx % len(colors)]
+            card = html.Div([
+                html.Div([
+                    html.Div([
+                        html.I(className="fas fa-cogs", 
+                              style={'fontSize': '32px', 'color': color, 'marginBottom': '15px'}),
+                        html.H4(strategy['name'], 
+                               style={'color': '#333', 'fontWeight': 'bold', 'marginBottom': '10px'}),
+                        html.P(strategy['description'], 
+                              style={'color': '#666', 'fontSize': '14px', 'marginBottom': '15px', 'lineHeight': '1.6'}),
+                        html.Hr(style={'margin': '15px 0', 'borderColor': '#e0e0e0'}),
+                        html.Div([
+                            html.Strong("Use Cases: ", style={'color': '#333', 'fontSize': '13px'}),
+                            html.Span(strategy['use_cases'], 
+                                     style={'color': '#666', 'fontSize': '13px'})
+                        ], style={'marginBottom': '10px'}),
+                        html.Div([
+                            html.Strong("Formula: ", style={'color': '#333', 'fontSize': '13px'}),
+                            html.Code(strategy['formula'], 
+                                     style={'color': color, 'fontSize': '12px', 'backgroundColor': '#f8f9fa', 
+                                           'padding': '4px 8px', 'borderRadius': '4px', 'fontFamily': 'monospace'})
+                        ])
+                    ], style={'padding': '20px'})
+                ], className='card', style={
+                    'border': 'none',
+                    'borderRadius': '12px',
+                    'boxShadow': '0 4px 6px rgba(0,0,0,0.1)',
+                    'transition': 'transform 0.2s, box-shadow 0.2s',
+                    'height': '100%',
+                    'backgroundColor': 'white'
+                })
+            ], className='col-md-12 col-lg-6', style={'marginBottom': '20px'})
+            strategy_cards.append(card)
+        
+        return html.Div([
+            html.Div([
+                html.H2("🔧 Feature Engineering Strategies", 
+                       style={'color': '#333', 'marginBottom': '10px', 'fontWeight': 'bold'}),
+                html.P("Domain-aware feature transformations for enhanced model performance", 
+                      style={'color': '#666', 'fontSize': '16px', 'marginBottom': '30px'})
+            ], style={'marginBottom': '20px'}),
+            html.Div(strategy_cards, className='row', style={'marginBottom': '30px'})
+        ], style={'marginTop': '30px'})
 
 
 class EDATabView:

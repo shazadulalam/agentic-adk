@@ -47,11 +47,61 @@ app = dash.Dash(__name__, external_stylesheets=[
     'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
 ])
 
+# Add custom CSS for sidebar navigation
+app.index_string = app.index_string.replace(
+    '</head>',
+    '''
+    <style>
+        .list-group-item {
+            transition: all 0.3s ease;
+        }
+        .list-group-item:hover {
+            background-color: #f8f9fa !important;
+            transform: translateX(5px);
+        }
+        .list-group-item.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            border-left: 4px solid #764ba2 !important;
+        }
+        .list-group-item.active i {
+            color: white !important;
+        }
+    </style>
+    </head>
+    ''' if '</head>' in app.index_string else ''
+)
+
 # Load HTML template from views folder
 from views.template_renderer import get_renderer
 
 renderer = get_renderer()
-app.index_string = renderer.load_template('dashboard_base.html')
+base_template = renderer.load_template('dashboard_base.html')
+# Add custom CSS for sidebar navigation
+app.index_string = base_template.replace(
+    '</head>',
+    '''
+    <style>
+        .list-group-item {
+            transition: all 0.3s ease;
+            border: none !important;
+        }
+        .list-group-item:hover {
+            background-color: #f8f9fa !important;
+            transform: translateX(5px);
+        }
+        .list-group-item.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            border-left: 4px solid #764ba2 !important;
+        }
+        .list-group-item.active i {
+            color: white !important;
+        }
+    </style>
+    </head>
+    '''
+)
 
 # Global variables
 current_df = None
@@ -129,6 +179,49 @@ app.layout = html.Div([
         html.Div([
             # Sidebar
             html.Div([
+                # Navigation Tabs (Sidebar)
+                html.Div([
+                    html.Div([
+                        html.A([
+                            html.I(className="fas fa-home", style={'marginRight': '10px'}),
+                            "Home"
+                        ], href="#", className="list-group-item list-group-item-action", id="nav-overview", n_clicks=0,
+                        style={'cursor': 'pointer', 'border': 'none', 'padding': '12px 15px', 'borderRadius': '5px', 'marginBottom': '5px'}),
+                        html.A([
+                            html.I(className="fas fa-chart-bar", style={'marginRight': '10px'}),
+                            "Visualizations"
+                        ], href="#", className="list-group-item list-group-item-action", id="nav-visualizations", n_clicks=0,
+                        style={'cursor': 'pointer', 'border': 'none', 'padding': '12px 15px', 'borderRadius': '5px', 'marginBottom': '5px'}),
+                        html.A([
+                            html.I(className="fas fa-search", style={'marginRight': '10px'}),
+                            "EDA Analysis"
+                        ], href="#", className="list-group-item list-group-item-action", id="nav-eda", n_clicks=0,
+                        style={'cursor': 'pointer', 'border': 'none', 'padding': '12px 15px', 'borderRadius': '5px', 'marginBottom': '5px'}),
+                        html.A([
+                            html.I(className="fas fa-chart-line", style={'marginRight': '10px'}),
+                            "Forecasting"
+                        ], href="#", className="list-group-item list-group-item-action", id="nav-forecasting", n_clicks=0,
+                        style={'cursor': 'pointer', 'border': 'none', 'padding': '12px 15px', 'borderRadius': '5px', 'marginBottom': '5px'}),
+                        html.A([
+                            html.I(className="fas fa-robot", style={'marginRight': '10px'}),
+                            "Predictions"
+                        ], href="#", className="list-group-item list-group-item-action", id="nav-predictions", n_clicks=0,
+                        style={'cursor': 'pointer', 'border': 'none', 'padding': '12px 15px', 'borderRadius': '5px', 'marginBottom': '5px'}),
+                        html.A([
+                            html.I(className="fas fa-lightbulb", style={'marginRight': '10px'}),
+                            "Insights"
+                        ], href="#", className="list-group-item list-group-item-action", id="nav-insights", n_clicks=0,
+                        style={'cursor': 'pointer', 'border': 'none', 'padding': '12px 15px', 'borderRadius': '5px', 'marginBottom': '5px'}),
+                        html.A([
+                            html.I(className="fas fa-table", style={'marginRight': '10px'}),
+                            "Data Table"
+                        ], href="#", className="list-group-item list-group-item-action", id="nav-data-table", n_clicks=0,
+                        style={'cursor': 'pointer', 'border': 'none', 'padding': '12px 15px', 'borderRadius': '5px'})
+                    ], className="list-group", style={'border': 'none'})
+                ], style={'marginBottom': '30px'}),
+                
+                html.Hr(style={'margin': '25px 0'}),
+                
                 html.H4("📁 Data Source", style={'marginBottom': '20px', 'fontWeight': '600'}),
                 
                 # File Upload (using HTML template)
@@ -180,29 +273,22 @@ app.layout = html.Div([
             
             # Main Content Area
             html.Div([
-                # Metrics Cards Row
+                # Metrics Cards Row (Above tabs)
                 html.Div(id='metrics-row', className='row', style={'marginBottom': '30px'}),
                 
                 # Date Range Display
                 html.Div(id='date-range-display', style={'marginBottom': '20px'}),
                 
-                # Tabs
+                # Hidden Tabs (for state management)
                 dcc.Tabs(id='main-tabs', value='overview', children=[
-                    dcc.Tab(label='📈 Overview', value='overview', 
-                           style={'fontWeight': '600'}, selected_style={'fontWeight': '700'}),
-                    dcc.Tab(label='📊 Visualizations', value='visualizations',
-                           style={'fontWeight': '600'}, selected_style={'fontWeight': '700'}),
-                    dcc.Tab(label='🔍 EDA Analysis', value='eda',
-                           style={'fontWeight': '600'}, selected_style={'fontWeight': '700'}),
-                    dcc.Tab(label='🔮 Forecasting', value='forecasting',
-                           style={'fontWeight': '600'}, selected_style={'fontWeight': '700'}),
-                    dcc.Tab(label='🤖 Predictions', value='predictions',
-                           style={'fontWeight': '600'}, selected_style={'fontWeight': '700'}),
-                    dcc.Tab(label='💡 Insights', value='insights',
-                           style={'fontWeight': '600'}, selected_style={'fontWeight': '700'}),
-                    dcc.Tab(label='📋 Data Table', value='data-table',
-                           style={'fontWeight': '600'}, selected_style={'fontWeight': '700'})
-                ], style={'marginBottom': '20px'}),
+                    dcc.Tab(label='Overview', value='overview'),
+                    dcc.Tab(label='Visualizations', value='visualizations'),
+                    dcc.Tab(label='EDA Analysis', value='eda'),
+                    dcc.Tab(label='Forecasting', value='forecasting'),
+                    dcc.Tab(label='Predictions', value='predictions'),
+                    dcc.Tab(label='Insights', value='insights'),
+                    dcc.Tab(label='Data Table', value='data-table')
+                ], style={'display': 'none'}),
                 
                 # Tab Content
                 html.Div(id='tab-content', className='tab-content-wrapper')
@@ -367,6 +453,56 @@ def filter_by_date(apply_clicks, clear_clicks, start_date, end_date, date_col, d
         filtered_df = current_df.copy()
         return current_df.to_dict('records'), ""
     return data, ""
+
+# Callback: Handle sidebar navigation clicks and update active state
+@app.callback(
+    [Output('main-tabs', 'value'),
+     Output('nav-overview', 'className'),
+     Output('nav-visualizations', 'className'),
+     Output('nav-eda', 'className'),
+     Output('nav-forecasting', 'className'),
+     Output('nav-predictions', 'className'),
+     Output('nav-insights', 'className'),
+     Output('nav-data-table', 'className')],
+    [Input('nav-overview', 'n_clicks'),
+     Input('nav-visualizations', 'n_clicks'),
+     Input('nav-eda', 'n_clicks'),
+     Input('nav-forecasting', 'n_clicks'),
+     Input('nav-predictions', 'n_clicks'),
+     Input('nav-insights', 'n_clicks'),
+     Input('nav-data-table', 'n_clicks')]
+)
+def update_tab_from_sidebar(overview_clicks, viz_clicks, eda_clicks, forecast_clicks, 
+                            pred_clicks, insights_clicks, table_clicks):
+    ctx = callback_context
+    base_class = "list-group-item list-group-item-action"
+    active_class = base_class + " active"
+    
+    if not ctx.triggered:
+        return 'overview', active_class, base_class, base_class, base_class, base_class, base_class, base_class
+    
+    button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    tab_map = {
+        'nav-overview': 'overview',
+        'nav-visualizations': 'visualizations',
+        'nav-eda': 'eda',
+        'nav-forecasting': 'forecasting',
+        'nav-predictions': 'predictions',
+        'nav-insights': 'insights',
+        'nav-data-table': 'data-table'
+    }
+    selected_tab = tab_map.get(button_id, 'overview')
+    
+    return (
+        selected_tab,
+        active_class if selected_tab == 'overview' else base_class,
+        active_class if selected_tab == 'visualizations' else base_class,
+        active_class if selected_tab == 'eda' else base_class,
+        active_class if selected_tab == 'forecasting' else base_class,
+        active_class if selected_tab == 'predictions' else base_class,
+        active_class if selected_tab == 'insights' else base_class,
+        active_class if selected_tab == 'data-table' else base_class
+    )
 
 # Callback: Update metrics and content
 @app.callback(
