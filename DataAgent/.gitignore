@@ -1,0 +1,140 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv
+conda-env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Generated Reports and Visualizations
+reports/
+!reports/.gitkeep
+
+# Trained Models
+models/*.pkl
+models/*.h5
+models/*.joblib
+models/*.pth
+models/*.onnx
+!models/__init__.py
+!models/*.py
+
+# Cache Files
+*.cache
+.cache/
+*.pkl
+!**/__init__.py
+
+# Log Files
+*.log
+.git_auto_push.log
+*.out
+*.err
+
+# Data Files (keep structure, exclude large datasets)
+datasets/*.csv
+datasets/*.parquet
+datasets/*.xlsx
+datasets/*.xls
+datasets/*.json
+datasets/*.h5
+datasets/*.hdf5
+!datasets/.gitkeep
+!datasets/README.md
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Git Automation Scripts (internal use only - exclude from tracking)
+.git_auto_push*.sh
+.git_push_wrapper*.sh
+.git_push_daemon.py
+.git_auto_push.log
+schedule_pushes.py
+
+# Command Log (user requested not to push)
+COMMAND_LOG.txt
+
+# Test Output
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Temporary Files
+*.tmp
+*.temp
+*.bak
+*.backup
+*~
+
+# Large Files
+*.zip
+*.tar.gz
+*.rar
+
+# Database Files
+*.db
+*.sqlite
+*.sqlite3
+
+# Configuration (if contains secrets - uncomment if needed)
+# config.py
+
+# Documentation builds
+docs/_build/
+site/
+
+# Profiling
+*.prof
+*.lprof

@@ -88,8 +88,10 @@ class PredictionAgent:
         
         results = {}
         
-        for name, model in models.items():
+        print(f"\n  Training {len(models)} regression models...")
+        for idx, (name, model) in enumerate(models.items(), 1):
             try:
+                print(f"  [{idx}/{len(models)}] Training {name}...", end=' ', flush=True)
                 # Use scaled data for models that need it
                 if name in ['linear_regression', 'ridge', 'lasso', 'svr', 'neural_network']:
                     model.fit(X_train_scaled, y_train)
@@ -97,6 +99,7 @@ class PredictionAgent:
                 else:
                     model.fit(X_train, y_train)
                     y_pred = model.predict(X_test)
+                print("✓", flush=True)
                 
                 # Calculate metrics
                 mse = mean_squared_error(y_test, y_pred)
@@ -105,7 +108,9 @@ class PredictionAgent:
                 rmse = np.sqrt(mse)
                 
                 # Cross-validation score (reduced folds for memory)
+                print(f"    Computing cross-validation...", end=' ', flush=True)
                 cv_scores = cross_val_score(model, X_train, y_train, cv=3, scoring='r2', n_jobs=1)
+                print("✓", flush=True)
                 
                 results[name] = {
                     'model': model,
@@ -161,8 +166,10 @@ class PredictionAgent:
         
         results = {}
         
-        for name, model in models.items():
+        print(f"\n  Training {len(models)} classification models...")
+        for idx, (name, model) in enumerate(models.items(), 1):
             try:
+                print(f"  [{idx}/{len(models)}] Training {name}...", end=' ', flush=True)
                 # Use scaled data for models that need it
                 if name in ['logistic_regression', 'svm', 'neural_network']:
                     model.fit(X_train_scaled, y_train)
@@ -170,6 +177,7 @@ class PredictionAgent:
                 else:
                     model.fit(X_train, y_train)
                     y_pred = model.predict(X_test)
+                print("✓", flush=True)
                 
                 # Calculate metrics
                 accuracy = accuracy_score(y_test, y_pred)
@@ -178,7 +186,9 @@ class PredictionAgent:
                 f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
                 
                 # Cross-validation score (reduced folds for memory)
+                print(f"    Computing cross-validation...", end=' ', flush=True)
                 cv_scores = cross_val_score(model, X_train, y_train, cv=3, scoring='accuracy', n_jobs=1)
+                print("✓", flush=True)
                 
                 results[name] = {
                     'model': model,
@@ -201,6 +211,7 @@ class PredictionAgent:
                 
             except Exception as e:
                 results[name] = {'error': str(e)}
+                print(f"✗ Error: {str(e)}", flush=True)
         
         return results
     
@@ -212,28 +223,42 @@ class PredictionAgent:
         MAX_TRAIN_ROWS = 50000
         if len(df) > MAX_TRAIN_ROWS:
             print(f"⚠ Sampling {MAX_TRAIN_ROWS} rows from {len(df)} for model training (memory optimization)")
+            import sys
+            sys.stdout.flush()
             df = df.sample(n=MAX_TRAIN_ROWS, random_state=RANDOM_STATE).reset_index(drop=True)
         
+        print("  Preparing features...", end=' ', flush=True)
         X, y = self.prepare_features(df, target_col)
+        print("✓", flush=True)
         
         # Limit features to prevent OOM
         MAX_FEATURES = 300
         if X.shape[1] > MAX_FEATURES:
             print(f"⚠ Limiting to top {MAX_FEATURES} features (out of {X.shape[1]}) for model training")
+            import sys
+            sys.stdout.flush()
             # Select top features by variance (most informative)
             feature_variance = X.var().sort_values(ascending=False)
             top_features = feature_variance.head(MAX_FEATURES).index.tolist()
             X = X[top_features]
         
         # Convert to float32 to reduce memory usage
+        print("  Converting data types...", end=' ', flush=True)
         X = X.astype('float32')
         # Ensure y is a Series, not DataFrame
         if isinstance(y, pd.DataFrame):
             y = y.iloc[:, 0] if y.shape[1] > 0 else y.squeeze()
         if hasattr(y, 'dtype') and y.dtype in [np.float64, np.int64]:
             y = y.astype('float32' if not self.is_classification(y) else 'int32')
+        print("✓", flush=True)
         
-        if self.is_classification(y):
+        # Determine task type
+        print("  Determining task type...", end=' ', flush=True)
+        is_classification = self.is_classification(y)
+        task_type_str = 'classification' if is_classification else 'regression'
+        print(f"✓ ({task_type_str})", flush=True)
+        
+        if is_classification:
             results = self.train_classification_models(X, y)
             results['task_type'] = 'classification'
         else:

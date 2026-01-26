@@ -151,47 +151,173 @@ def main():
             print("\n[5/6] Skipping forecasting (date and value columns not specified)")
     
     if args.mode == 'full' or args.mode == 'predict':
-        print("\n[6/6] Training Predictive Models...")
+        print("\n" + "="*60)
+        print("[6/6] Training Predictive Models...")
+        print("="*60)
         try:
             # Use engineered features if available, otherwise use original
             if args.mode == 'full' and 'df_engineered' in locals():
                 print("  Using feature-engineered dataset")
-                prediction_results = predictor.auto_train(df_engineered, target_col)
+                training_df = df_engineered
             else:
-                prediction_results = predictor.auto_train(df, target_col)
+                training_df = df
+            
+            print(f"\n📊 Dataset Info:")
+            print(f"  • Rows: {len(training_df):,}")
+            print(f"  • Features: {len(training_df.columns):,}")
+            print(f"  • Target: {target_col}")
+            import sys
+            sys.stdout.flush()
+            
+            print(f"\n🔄 Starting model training...")
+            sys.stdout.flush()
+            prediction_results = predictor.auto_train(training_df, target_col)
+            sys.stdout.flush()
             
             task_type = prediction_results.get('task_type', 'unknown')
             best_model = prediction_results.get('best_model', 'N/A')
-            print(f"✓ Model training completed")
-            print(f"  • Task type: {task_type}")
-            print(f"  • Best model: {best_model}")
             
-            # Print metrics for best model
-            if best_model in prediction_results:
+            print("\n" + "="*60)
+            print("📈 MODEL TRAINING RESULTS")
+            print("="*60)
+            print(f"\nTask Type: {task_type.upper()}")
+            print(f"Models Trained: {len([k for k in prediction_results.keys() if k not in ['task_type', 'best_model']])}")
+            
+            # Display results for all models
+            print("\n" + "-"*60)
+            print("MODEL PERFORMANCE METRICS")
+            print("-"*60)
+            
+            if task_type == 'classification':
+                # Classification metrics table
+                print(f"\n{'Model':<25} {'Accuracy':<12} {'Precision':<12} {'Recall':<12} {'F1-Score':<12} {'CV Score':<12}")
+                print("-"*85)
+                
+                for model_name in sorted([k for k in prediction_results.keys() if k not in ['task_type', 'best_model']]):
+                    if 'error' in prediction_results[model_name]:
+                        print(f"{model_name:<25} {'ERROR':<12} {'-':<12} {'-':<12} {'-':<12} {'-':<12}")
+                        print(f"  └─ {prediction_results[model_name]['error']}")
+                    else:
+                        result = prediction_results[model_name]
+                        acc = result.get('accuracy', 0)
+                        prec = result.get('precision', 0)
+                        rec = result.get('recall', 0)
+                        f1 = result.get('f1', 0)
+                        cv_mean = result.get('cv_mean', 0)
+                        cv_std = result.get('cv_std', 0)
+                        
+                        marker = "⭐" if model_name == best_model else "  "
+                        print(f"{marker} {model_name:<23} {acc:<12.4f} {prec:<12.4f} {rec:<12.4f} {f1:<12.4f} {cv_mean:.4f}±{cv_std:.4f}")
+                        
+                        # Show confusion matrix for best model
+                        if model_name == best_model and 'confusion_matrix' in result:
+                            print(f"\n  📊 Confusion Matrix ({model_name}):")
+                            cm = result['confusion_matrix']
+                            print(f"  {cm}")
+                            
+            else:
+                # Regression metrics table
+                print(f"\n{'Model':<25} {'R² Score':<12} {'RMSE':<12} {'MAE':<12} {'MSE':<12} {'CV Score':<12}")
+                print("-"*85)
+                
+                for model_name in sorted([k for k in prediction_results.keys() if k not in ['task_type', 'best_model']]):
+                    if 'error' in prediction_results[model_name]:
+                        print(f"{model_name:<25} {'ERROR':<12} {'-':<12} {'-':<12} {'-':<12} {'-':<12}")
+                        print(f"  └─ {prediction_results[model_name]['error']}")
+                    else:
+                        result = prediction_results[model_name]
+                        r2 = result.get('r2', 0)
+                        rmse = result.get('rmse', 0)
+                        mae = result.get('mae', 0)
+                        mse = result.get('mse', 0)
+                        cv_mean = result.get('cv_mean', 0)
+                        cv_std = result.get('cv_std', 0)
+                        
+                        marker = "⭐" if model_name == best_model else "  "
+                        print(f"{marker} {model_name:<23} {r2:<12.4f} {rmse:<12.2f} {mae:<12.2f} {mse:<12.2f} {cv_mean:.4f}±{cv_std:.4f}")
+            
+            # Best model summary
+            print("\n" + "="*60)
+            print("🏆 BEST MODEL SUMMARY")
+            print("="*60)
+            print(f"\nBest Model: {best_model}")
+            
+            if best_model in prediction_results and 'error' not in prediction_results[best_model]:
                 best_result = prediction_results[best_model]
+                
                 if task_type == 'classification':
-                    print(f"  • Accuracy: {best_result.get('accuracy', 0):.4f}")
-                    print(f"  • F1 Score: {best_result.get('f1', 0):.4f}")
+                    print(f"\n📊 Performance Metrics:")
+                    print(f"  • Accuracy:  {best_result.get('accuracy', 0):.4f} ({best_result.get('accuracy', 0)*100:.2f}%)")
+                    print(f"  • Precision: {best_result.get('precision', 0):.4f}")
+                    print(f"  • Recall:    {best_result.get('recall', 0):.4f}")
+                    print(f"  • F1-Score:  {best_result.get('f1', 0):.4f}")
+                    print(f"  • CV Score:  {best_result.get('cv_mean', 0):.4f} ± {best_result.get('cv_std', 0):.4f}")
+                    
+                    if 'classification_report' in best_result:
+                        print(f"\n📋 Detailed Classification Report:")
+                        print(best_result['classification_report'])
+                        
                 else:
-                    print(f"  • R² Score: {best_result.get('r2', 0):.4f}")
-                    print(f"  • RMSE: {best_result.get('rmse', 0):.4f}")
+                    print(f"\n📊 Performance Metrics:")
+                    print(f"  • R² Score:  {best_result.get('r2', 0):.4f} ({best_result.get('r2', 0)*100:.2f}% variance explained)")
+                    print(f"  • RMSE:      {best_result.get('rmse', 0):.4f}")
+                    print(f"  • MAE:       {best_result.get('mae', 0):.4f}")
+                    print(f"  • MSE:       {best_result.get('mse', 0):.4f}")
+                    print(f"  • CV Score:  {best_result.get('cv_mean', 0):.4f} ± {best_result.get('cv_std', 0):.4f}")
+                
+                if 'model_path' in best_result:
+                    print(f"\n  Model saved to: {best_result['model_path']}")
+            
+            print("\n" + "="*60)
+            print("✓ Model training completed successfully!")
+            print("="*60)
+            import sys
+            sys.stdout.flush()
+            
         except Exception as e:
-            print(f"Error in prediction: {e}")
+            print(f"\n Error in prediction: {e}")
             import traceback
             traceback.print_exc()
+            import sys
+            sys.stdout.flush()
     
     print("\n" + "=" * 60)
     print("Analysis Complete!")
     print("=" * 60)
     print(f"\nReports saved to: {REPORTS_DIR}/")
     print(f"Models saved to: {MODELS_DIR}/")
+    import sys
+    sys.stdout.flush()
     
-    # Launch dashboard if requested
-    if args.dashboard:
-        print("\n🚀 Launching interactive dashboard...")
-        print("Dashboard will be available at http://localhost:8050")
+    # Launch dashboard automatically after training (unless explicitly disabled)
+    # User can interrupt with Ctrl+C if they don't want the dashboard
+    try:
+        print("\n" + "="*60)
+        print("🚀 Launching Interactive Dashboard...")
+        print("="*60)
+        print("\n📊 Dashboard will be available at:")
+        print("   → http://localhost:8050")
+        print("   → http://127.0.0.1:8050")
+        print("\n💡 Tips:")
+        print("   - Upload a CSV file or use the default dataset")
+        print("   - Select target column for predictions")
+        print("   - Click 'Run Full Analysis' to generate results")
+        print("\n⏹️  Press Ctrl+C to stop the server")
+        print("="*60 + "\n")
+        sys.stdout.flush()
+        
+        # Import and create dashboard app with the current data
         from dashboards.dashboard import app
-        app.run_server(debug=True, host='0.0.0.0', port=8050)
+        app.run_server(debug=False, host='0.0.0.0', port=8050, use_reloader=False)
+    except KeyboardInterrupt:
+        print("\n\n⚠️  Dashboard launch interrupted by user")
+        print("Analysis results are still available in reports/ and models/ directories")
+        sys.exit(0)
+    except Exception as e:
+        print(f"\n⚠️  Could not launch dashboard: {e}")
+        print("Analysis results are still available in reports/ and models/ directories")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()
