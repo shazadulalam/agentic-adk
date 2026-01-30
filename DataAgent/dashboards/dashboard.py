@@ -1,28 +1,15 @@
-"""
-Enhanced DataAgent Dashboard with File Upload, Date Filtering, and Modern UI
-Inspired by Django template but built with Dash/Plotly
-"""
+"""Enhanced DataAgent Dashboard with File Upload, Date Filtering, and Modern UI"""
 import dash
-from dash import html, dcc, Input, Output, State, dash_table, callback_context
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+from dash import html, dcc, Input, Output, State, callback_context
 import pandas as pd
 import numpy as np
 import os
-import json
 import base64
 import io
-from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
-
-# Import agents and utilities
-import sys
-# Add parent directory to path
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
+from utils.common import setup_path, get_numeric_cols, calc_missing_pct
+setup_path()
 
 from agents.cleanerAgent import Cleaner
 from agents.analyzer import ModelAnalyzer
@@ -152,17 +139,16 @@ html_gen = get_html_generator()
 # Import views at module level (optimization)
 from views.dashboard_views import (
     OverviewTabView, EDATabView, VisualizationsTabView,
-    ForecastingTabView, PredictionsTabView, InsightsTabView, DataTableView
+    ForecastingTabView, PredictionsTabView, InsightsTabView, 
+    GraphVisualizationTabView, DataTableView
 )
 
-def create_metric_card(icon, value, label, color="#667eea"):
-    """Create a metric card component using HTML template"""
-    return html_gen.metric_card(icon, str(value), label, color)
+from utils.dashboard_components import create_metric_card
 
 # App Layout
 app.layout = html.Div([
-    dcc.Store(id='data-store'),
-    dcc.Store(id='filtered-data-store'),
+    dcc.Store(id='data-store', data=current_df.to_dict('records') if current_df is not None else None),
+    dcc.Store(id='filtered-data-store', data=filtered_df.to_dict('records') if filtered_df is not None else None),
     
     # Header
     html.Div([
@@ -211,6 +197,11 @@ app.layout = html.Div([
                             html.I(className="fas fa-lightbulb", style={'marginRight': '10px'}),
                             "Insights"
                         ], href="#", className="list-group-item list-group-item-action", id="nav-insights", n_clicks=0,
+                        style={'cursor': 'pointer', 'border': 'none', 'padding': '12px 15px', 'borderRadius': '5px', 'marginBottom': '5px'}),
+                        html.A([
+                            html.I(className="fas fa-project-diagram", style={'marginRight': '10px'}),
+                            "Graph Visualization"
+                        ], href="#", className="list-group-item list-group-item-action", id="nav-graph", n_clicks=0,
                         style={'cursor': 'pointer', 'border': 'none', 'padding': '12px 15px', 'borderRadius': '5px', 'marginBottom': '5px'}),
                         html.A([
                             html.I(className="fas fa-table", style={'marginRight': '10px'}),
@@ -287,6 +278,7 @@ app.layout = html.Div([
                     dcc.Tab(label='Forecasting', value='forecasting'),
                     dcc.Tab(label='Predictions', value='predictions'),
                     dcc.Tab(label='Insights', value='insights'),
+                    dcc.Tab(label='Graph Visualization', value='graph'),
                     dcc.Tab(label='Data Table', value='data-table')
                 ], style={'display': 'none'}),
                 
@@ -463,6 +455,7 @@ def filter_by_date(apply_clicks, clear_clicks, start_date, end_date, date_col, d
      Output('nav-forecasting', 'className'),
      Output('nav-predictions', 'className'),
      Output('nav-insights', 'className'),
+     Output('nav-graph', 'className'),
      Output('nav-data-table', 'className')],
     [Input('nav-overview', 'n_clicks'),
      Input('nav-visualizations', 'n_clicks'),
@@ -470,16 +463,17 @@ def filter_by_date(apply_clicks, clear_clicks, start_date, end_date, date_col, d
      Input('nav-forecasting', 'n_clicks'),
      Input('nav-predictions', 'n_clicks'),
      Input('nav-insights', 'n_clicks'),
+     Input('nav-graph', 'n_clicks'),
      Input('nav-data-table', 'n_clicks')]
 )
 def update_tab_from_sidebar(overview_clicks, viz_clicks, eda_clicks, forecast_clicks, 
-                            pred_clicks, insights_clicks, table_clicks):
+                            pred_clicks, insights_clicks, graph_clicks, table_clicks):
     ctx = callback_context
     base_class = "list-group-item list-group-item-action"
     active_class = base_class + " active"
     
     if not ctx.triggered:
-        return 'overview', active_class, base_class, base_class, base_class, base_class, base_class, base_class
+        return 'overview', active_class, base_class, base_class, base_class, base_class, base_class, base_class, base_class
     
     button_id = ctx.triggered[0]['prop_id'].split('.')[0]
     tab_map = {
@@ -489,6 +483,7 @@ def update_tab_from_sidebar(overview_clicks, viz_clicks, eda_clicks, forecast_cl
         'nav-forecasting': 'forecasting',
         'nav-predictions': 'predictions',
         'nav-insights': 'insights',
+        'nav-graph': 'graph',
         'nav-data-table': 'data-table'
     }
     selected_tab = tab_map.get(button_id, 'overview')
@@ -501,6 +496,7 @@ def update_tab_from_sidebar(overview_clicks, viz_clicks, eda_clicks, forecast_cl
         active_class if selected_tab == 'forecasting' else base_class,
         active_class if selected_tab == 'predictions' else base_class,
         active_class if selected_tab == 'insights' else base_class,
+        active_class if selected_tab == 'graph' else base_class,
         active_class if selected_tab == 'data-table' else base_class
     )
 
@@ -510,40 +506,39 @@ def update_tab_from_sidebar(overview_clicks, viz_clicks, eda_clicks, forecast_cl
      Output('tab-content', 'children')],
     [Input('main-tabs', 'value'),
      Input('run-analysis', 'n_clicks'),
-     Input('filtered-data-store', 'data')],
+     Input('filtered-data-store', 'data'),
+     Input('data-store', 'data')],
     [State('target-column', 'value'),
      State('date-column', 'value'),
-     State('value-column', 'value'),
-     State('data-store', 'data')]
+     State('value-column', 'value')]
 )
-def update_content(tab, n_clicks, filtered_data, target_col, date_col, value_col, original_data):
+def update_content(tab, n_clicks, filtered_data, original_data, target_col, date_col, value_col):
     global filtered_df
     
-    # Use filtered data if available, otherwise original
-    if filtered_data:
+    # Use filtered data if available, otherwise original, then current_df
+    if filtered_data and len(filtered_data) > 0:
         df = pd.DataFrame(filtered_data)
         filtered_df = df
-    elif original_data:
+    elif original_data and len(original_data) > 0:
         df = pd.DataFrame(original_data)
         filtered_df = df
     else:
         df = current_df if current_df is not None else pd.DataFrame()
     
     if df is None or len(df) == 0:
+        if tab == 'graph':
+            return [], GraphVisualizationTabView.render(pd.DataFrame())
         return [], html.Div([
             html.H3("No data loaded"),
             html.P("Please upload a CSV/Excel file to begin analysis")
         ])
     
-    # Calculate metrics
-    numeric_cols = df.select_dtypes(include=[np.number]).columns
-    missing_pct = (df.isnull().sum().sum() / (df.shape[0] * df.shape[1])) * 100 if df.shape[0] > 0 else 0
-    
-    # Create metric cards
+    numeric_cols = get_numeric_cols(df)
+    missing_pct = calc_missing_pct(df)
     metrics = html.Div([
         html.Div([create_metric_card("fas fa-database", f"{len(df):,}", "Total Rows", "#667eea")], className='col-md-3'),
-        html.Div([create_metric_card("fas fa-columns", f"{len(df.columns)}", "Total Columns", "#48bb78")], className='col-md-3'),
-        html.Div([create_metric_card("fas fa-chart-line", f"{len(numeric_cols)}", "Numeric Columns", "#ed8936")], className='col-md-3'),
+        html.Div([create_metric_card("fas fa-columns", len(df.columns), "Total Columns", "#48bb78")], className='col-md-3'),
+        html.Div([create_metric_card("fas fa-chart-line", len(numeric_cols), "Numeric Columns", "#ed8936")], className='col-md-3'),
         html.Div([create_metric_card("fas fa-exclamation-triangle", f"{missing_pct:.1f}%", "Missing Data", "#f56565")], className='col-md-3')
     ], className='row')
     
@@ -589,6 +584,8 @@ def update_content(tab, n_clicks, filtered_data, target_col, date_col, value_col
                 content = html.Div(f"Error generating insights: {str(e)}", style={'color': 'red'})
         else:
             content = InsightsTabView.render(analysis_results.get('insights', {}))
+    elif tab == 'graph':
+        content = GraphVisualizationTabView.render(df)
     elif tab == 'data-table':
         content = DataTableView.render(df)
     else:
@@ -599,3 +596,18 @@ def update_content(tab, n_clicks, filtered_data, target_col, date_col, value_col
 # Note: This file is now a module. Use main.py as the entry point.
 # To run dashboard: python main.py --mode dashboard
 # Or: python main.py --dashboard (after analysis)
+
+if __name__ == '__main__':
+    print("=" * 60)
+    print("🚀 Starting DataAgent Dashboard")
+    print("=" * 60)
+    print("\n📊 Dashboard will be available at:")
+    print("   → http://localhost:8050")
+    print("   → http://127.0.0.1:8050")
+    print("\n💡 Tips:")
+    print("   - Upload a CSV file or use the default dataset")
+    print("   - Select target column for predictions")
+    print("   - Click 'Run Full Analysis' to generate results")
+    print("\n⏹️  Press Ctrl+C to stop the server")
+    print("=" * 60 + "\n")
+    app.run_server(debug=False, host='0.0.0.0', port=8050, use_reloader=False)

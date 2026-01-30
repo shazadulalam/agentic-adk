@@ -24,6 +24,7 @@ statsmodels>=0.14.0
 google-cloud-bigquery>=3.11.0
 sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.0
+# neo4j>=5.0.0  # Optional - for graph database features
 
 # Web Dashboard
 dash>=2.14.0
@@ -35,3 +36,9 @@ scipy>=1.11.0
 # Utilities
 python-dateutil>=2.8.0
 pytz>=2023.3
+
+# Quantitative Finance
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+yfinance>=0.2.28
+pydantic>=2.5.0

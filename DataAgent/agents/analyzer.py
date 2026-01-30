@@ -2,14 +2,16 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy import stats
 from scipy.stats import normaltest, shapiro
 import warnings
 warnings.filterwarnings('ignore')
 import os
 import hashlib
 import pickle
+from utils.common import setup_path
 from config import *
+setup_path()
+from utils.segmentation import SegmentationAnalyzer
 
 class ModelAnalyzer:
     """
@@ -21,6 +23,7 @@ class ModelAnalyzer:
         self.cache_dir = os.path.join(REPORTS_DIR, 'cache')
         os.makedirs(self.reports_dir, exist_ok=True)
         os.makedirs(self.cache_dir, exist_ok=True)
+        self.segmentation_analyzer = SegmentationAnalyzer()
         try:
             plt.style.use('seaborn-v0_8-darkgrid')
         except:
@@ -116,6 +119,9 @@ class ModelAnalyzer:
         
         # Outlier detection (on limited dataset)
         results['outliers'] = self._outlier_analysis(df_eda)
+        
+        # Segmentation analysis (on full dataset)
+        results['segmentation'] = self.segmentation_analyzer.get_segmentation_summary(df)
         
         # Generate visualizations (on limited dataset)
         self._generate_visualizations(df_eda, target_col)

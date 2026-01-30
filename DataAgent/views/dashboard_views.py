@@ -1,20 +1,15 @@
-"""
-Dashboard view components for Dash application
-"""
+"""Dashboard view components for Dash application"""
 from dash import html, dcc, dash_table
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
-import sys
-import os
-
-# Add parent directory to path for feature_engineering import
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-
+from utils.common import setup_path, get_numeric_cols, get_categorical_cols, calc_missing_pct
+from utils.dashboard_components import create_metric_card, create_card, create_bar_chart, COLORS
+setup_path()
 from feature_engineering import FeatureEngineeringStrategies
+from utils.neo4j_graph import Neo4jGraphBuilder
+from utils.segmentation import SegmentationAnalyzer
 
 
 class OverviewTabView:
@@ -23,86 +18,15 @@ class OverviewTabView:
     @staticmethod
     def render(df: pd.DataFrame):
         """Render overview tab content with enhanced metrics"""
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
-        categorical_cols = df.select_dtypes(include=['object', 'category']).columns
-        missing_pct = (df.isnull().sum().sum() / (df.shape[0] * df.shape[1])) * 100
+        numeric_cols = get_numeric_cols(df)
+        categorical_cols = get_categorical_cols(df)
+        missing_pct = calc_missing_pct(df)
         
         metrics = [
-            html.Div([
-                html.Div([
-                    html.I(className="fas fa-database", style={'fontSize': '32px', 'color': '#667eea', 'marginBottom': '10px'}),
-                    html.H4("Dataset Shape", style={'margin': '10px 0'}),
-                    html.P(f"{df.shape[0]:,}", style={'fontSize': '36px', 'fontWeight': 'bold', 'color': '#667eea', 'margin': '0'}),
-                    html.P("Rows", style={'fontSize': '14px', 'color': '#666', 'margin': '5px 0'}),
-                    html.P(f"{df.shape[1]:,} Columns", style={'fontSize': '18px', 'color': '#888', 'margin': '10px 0 0 0'})
-                ], style={'textAlign': 'center'})
-            ], style={
-                'background': 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                'color': 'white',
-                'padding': '30px',
-                'borderRadius': '12px',
-                'boxShadow': '0 4px 6px rgba(0,0,0,0.1)',
-                'margin': '10px',
-                'flex': '1',
-                'minWidth': '200px'
-            }),
-            
-            html.Div([
-                html.Div([
-                    html.I(className="fas fa-memory", style={'fontSize': '32px', 'color': '#28a745', 'marginBottom': '10px'}),
-                    html.H4("Memory Usage", style={'margin': '10px 0'}),
-                    html.P(f"{df.memory_usage(deep=True).sum() / 1024**2:.2f}", 
-                          style={'fontSize': '36px', 'fontWeight': 'bold', 'color': '#28a745', 'margin': '0'}),
-                    html.P("MB", style={'fontSize': '14px', 'color': '#666', 'margin': '5px 0'})
-                ], style={'textAlign': 'center'})
-            ], style={
-                'background': 'white',
-                'padding': '30px',
-                'borderRadius': '12px',
-                'boxShadow': '0 4px 6px rgba(0,0,0,0.1)',
-                'margin': '10px',
-                'flex': '1',
-                'minWidth': '200px',
-                'border': '2px solid #28a745'
-            }),
-            
-            html.Div([
-                html.Div([
-                    html.I(className="fas fa-exclamation-triangle", style={'fontSize': '32px', 'color': '#ffc107', 'marginBottom': '10px'}),
-                    html.H4("Missing Values", style={'margin': '10px 0'}),
-                    html.P(f"{df.isnull().sum().sum():,}", 
-                          style={'fontSize': '36px', 'fontWeight': 'bold', 'color': '#ffc107', 'margin': '0'}),
-                    html.P(f"({missing_pct:.1f}%)", style={'fontSize': '14px', 'color': '#666', 'margin': '5px 0'})
-                ], style={'textAlign': 'center'})
-            ], style={
-                'background': 'white',
-                'padding': '30px',
-                'borderRadius': '12px',
-                'boxShadow': '0 4px 6px rgba(0,0,0,0.1)',
-                'margin': '10px',
-                'flex': '1',
-                'minWidth': '200px',
-                'border': '2px solid #ffc107'
-            }),
-            
-            html.Div([
-                html.Div([
-                    html.I(className="fas fa-chart-bar", style={'fontSize': '32px', 'color': '#17a2b8', 'marginBottom': '10px'}),
-                    html.H4("Numeric Columns", style={'margin': '10px 0'}),
-                    html.P(f"{len(numeric_cols)}", 
-                          style={'fontSize': '36px', 'fontWeight': 'bold', 'color': '#17a2b8', 'margin': '0'}),
-                    html.P(f"{len(categorical_cols)} Categorical", style={'fontSize': '14px', 'color': '#666', 'margin': '5px 0'})
-                ], style={'textAlign': 'center'})
-            ], style={
-                'background': 'white',
-                'padding': '30px',
-                'borderRadius': '12px',
-                'boxShadow': '0 4px 6px rgba(0,0,0,0.1)',
-                'margin': '10px',
-                'flex': '1',
-                'minWidth': '200px',
-                'border': '2px solid #17a2b8'
-            })
+            create_metric_card("fas fa-database", f"{df.shape[0]:,}", "Rows", COLORS['primary']),
+            create_metric_card("fas fa-memory", f"{df.memory_usage(deep=True).sum() / 1024**2:.2f}", "MB", COLORS['success']),
+            create_metric_card("fas fa-exclamation-triangle", f"{df.isnull().sum().sum():,}", f"Missing ({missing_pct:.1f}%)", COLORS['warning']),
+            create_metric_card("fas fa-chart-bar", len(numeric_cols), f"Numeric ({len(categorical_cols)} Cat)", COLORS['info'])
         ]
         
         # Summary statistics for numeric columns
@@ -112,15 +36,56 @@ class OverviewTabView:
             summary_df.columns = ['Column'] + [col for col in summary_df.columns[1:]]
             summary_stats = summary_df.to_dict('records')
         
+        seg_analyzer = SegmentationAnalyzer()
+        seg_summary = seg_analyzer.get_segmentation_summary(df)
+        
         return html.Div([
             html.Div([
                 html.H2("📊 Dataset Overview", style={'marginBottom': '20px', 'color': '#333'}),
                 html.Div(metrics, style={'display': 'flex', 'flexWrap': 'wrap', 'justifyContent': 'space-around', 'marginBottom': '30px'}),
             ]),
             html.Hr(style={'margin': '30px 0'}),
-            # Feature Engineering Strategies Section
+            OverviewTabView._render_segmentation_summary(seg_summary),
+            html.Hr(style={'margin': '30px 0'}),
             OverviewTabView._render_feature_engineering_strategies()
         ], style={'padding': '20px', 'backgroundColor': '#f8f9fa', 'minHeight': '100vh'})
+    
+    @staticmethod
+    def _render_segmentation_summary(seg_summary: dict):
+        """Render segmentation summary cards"""
+        seg_types = {
+            'demographic': {'icon': '👥', 'color': '#667eea', 'title': 'Demographic'},
+            'geographic': {'icon': '🌍', 'color': '#48bb78', 'title': 'Geographic'},
+            'firmographic': {'icon': '🏢', 'color': '#ed8936', 'title': 'Firmographic'},
+            'behavioral': {'icon': '🛒', 'color': '#f56565', 'title': 'Behavioral'},
+            'technographic': {'icon': '💻', 'color': '#9f7aea', 'title': 'Technographic'},
+            'psychographic': {'icon': '🧠', 'color': '#38b2ac', 'title': 'Psychographic'}
+        }
+        
+        cards = []
+        for seg_type, info in seg_types.items():
+            count = seg_summary.get(seg_type, {}).get('count', 0)
+            cards.append(html.Div([
+                html.Div([
+                    html.Div([
+                        html.Span(info['icon'], style={'fontSize': '32px', 'marginBottom': '10px'}),
+                        html.H5(info['title'], style={'color': '#333', 'margin': '10px 0', 'fontSize': '16px'}),
+                        html.P(f"{count} columns", style={'fontSize': '24px', 'fontWeight': 'bold', 'color': info['color'], 'margin': '0'})
+                    ], style={'textAlign': 'center', 'padding': '20px'})
+                ], className='card', style={
+                    'border': f'2px solid {info["color"]}',
+                    'borderRadius': '12px',
+                    'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+                    'backgroundColor': 'white',
+                    'height': '100%'
+                })
+            ], className='col-md-4 col-lg-2', style={'marginBottom': '15px'}))
+        
+        return html.Div([
+            html.H2("🎯 Data Segmentation Summary", style={'color': '#333', 'marginBottom': '20px', 'fontWeight': 'bold'}),
+            html.P("Automatically detected segmentation types in your dataset", style={'color': '#666', 'fontSize': '14px', 'marginBottom': '20px'}),
+            html.Div(cards, className='row')
+        ])
     
     @staticmethod
     def _render_feature_engineering_strategies():
@@ -185,17 +150,23 @@ class EDATabView:
     def render(results: dict, df: pd.DataFrame):
         """Render EDA tab content"""
         if not results:
-            return html.Div("Click 'Run Full Analysis' to generate EDA results")
+            seg_analyzer = SegmentationAnalyzer()
+            seg_summary = seg_analyzer.get_segmentation_summary(df)
+            return EDATabView._render_segmentation_only(seg_summary, df)
         
-        content = [html.H2("Exploratory Data Analysis Results")]
+        content = [html.H2("📊 Exploratory Data Analysis Results", style={'marginBottom': '20px', 'color': '#333'})]
         
         if 'data_quality' in results:
-            content.append(html.H3("Data Quality"))
+            content.append(html.H3("Data Quality", style={'marginTop': '20px', 'color': '#667eea'}))
             quality = results['data_quality']
-            content.append(html.P(f"Duplicate Rows: {quality.get('duplicate_rows', 0)}"))
+            content.append(html.Div([
+                html.P(f"Duplicate Rows: {quality.get('duplicate_rows', 0)}", style={'margin': '5px 0'}),
+                html.P(f"Missing Values: {quality.get('missing_values', 0)}", style={'margin': '5px 0'}),
+                html.P(f"Complete Rows: {quality.get('complete_rows', 0)}", style={'margin': '5px 0'})
+            ], style={'padding': '15px', 'backgroundColor': 'white', 'borderRadius': '8px', 'marginBottom': '20px'}))
         
         if 'distributions' in results:
-            content.append(html.H3("Distribution Analysis"))
+            content.append(html.H3("Distribution Analysis", style={'marginTop': '20px', 'color': '#667eea'}))
             dist_data = []
             for col, dist_info in results['distributions'].items():
                 dist_data.append({
@@ -207,10 +178,82 @@ class EDATabView:
             content.append(dash_table.DataTable(
                 data=dist_data,
                 columns=[{'name': col, 'id': col} for col in ['Column', 'Skewness', 'Kurtosis', 'Is Normal']],
-                style_cell={'textAlign': 'left', 'padding': '10px'}
+                style_cell={'textAlign': 'left', 'padding': '10px'},
+                style_header={'backgroundColor': '#667eea', 'color': 'white', 'fontWeight': 'bold'},
+                style_data={'backgroundColor': 'white'}
             ))
         
+        if 'segmentation' in results:
+            content.append(EDATabView._render_segmentation_section(results['segmentation'], df))
+        else:
+            seg_analyzer = SegmentationAnalyzer()
+            seg_summary = seg_analyzer.get_segmentation_summary(df)
+            content.append(EDATabView._render_segmentation_section(seg_summary, df))
+        
+        return html.Div(content, style={'padding': '20px', 'backgroundColor': '#f8f9fa', 'minHeight': '100vh'})
+    
+    @staticmethod
+    def _render_segmentation_section(segmentation: dict, df: pd.DataFrame):
+        """Render segmentation analysis section"""
+        seg_analyzer = SegmentationAnalyzer()
+        seg_types = {
+            'demographic': {'icon': '👥', 'color': '#667eea', 'title': 'Demographic Segmentation'},
+            'geographic': {'icon': '🌍', 'color': '#48bb78', 'title': 'Geographic Segmentation'},
+            'firmographic': {'icon': '🏢', 'color': '#ed8936', 'title': 'Firmographic Segmentation'},
+            'behavioral': {'icon': '🛒', 'color': '#f56565', 'title': 'Behavioral Segmentation'},
+            'technographic': {'icon': '💻', 'color': '#9f7aea', 'title': 'Technographic Segmentation'},
+            'psychographic': {'icon': '🧠', 'color': '#38b2ac', 'title': 'Psychographic Segmentation'}
+        }
+        
+        content = [html.H3("🎯 Data Segmentation Analysis", style={'marginTop': '30px', 'marginBottom': '20px', 'color': '#333'})]
+        
+        for seg_type, info in seg_types.items():
+            if seg_type in segmentation and segmentation[seg_type]['count'] > 0:
+                seg_data = segmentation[seg_type]
+                content.append(html.Div([
+                    html.Div([
+                        html.H4([
+                            html.Span(info['icon'], style={'marginRight': '10px', 'fontSize': '24px'}),
+                            info['title']
+                        ], style={'color': info['color'], 'marginBottom': '15px'}),
+                        html.P(f"Columns Found: {seg_data['count']}", style={'fontSize': '14px', 'color': '#666', 'marginBottom': '10px'}),
+                        html.Div([
+                            html.Span(col, className='badge', style={
+                                'backgroundColor': info['color'],
+                                'color': 'white',
+                                'padding': '5px 10px',
+                                'margin': '3px',
+                                'borderRadius': '4px',
+                                'fontSize': '12px'
+                            }) for col in seg_data['columns'][:10]
+                        ], style={'marginBottom': '15px'}),
+                        EDATabView._render_segmentation_charts(df, seg_type, seg_data['columns'])
+                    ], style={
+                        'padding': '20px',
+                        'backgroundColor': 'white',
+                        'borderRadius': '8px',
+                        'marginBottom': '20px',
+                        'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'
+                    })
+                ]))
+        
         return html.Div(content)
+    
+    @staticmethod
+    def _render_segmentation_charts(df: pd.DataFrame, seg_type: str, columns: list):
+        """Render charts for segmentation columns"""
+        charts = [create_bar_chart(df, col) for col in columns[:3] if col in df.columns]
+        return html.Div(charts, className='row', style={'marginTop': '15px'}) if charts else html.Div()
+    
+    @staticmethod
+    def _render_segmentation_only(segmentation: dict, df: pd.DataFrame):
+        """Render only segmentation when no EDA results available"""
+        content = [
+            html.H2("📊 Data Segmentation Analysis", style={'marginBottom': '20px', 'color': '#333'}),
+            html.P("Run Full Analysis for complete EDA results", style={'color': '#666', 'marginBottom': '30px'})
+        ]
+        content.append(EDATabView._render_segmentation_section(segmentation, df))
+        return html.Div(content, style={'padding': '20px', 'backgroundColor': '#f8f9fa', 'minHeight': '100vh'})
 
 
 class VisualizationsTabView:
@@ -219,17 +262,14 @@ class VisualizationsTabView:
     @staticmethod
     def render(df: pd.DataFrame, target_col: str = None):
         """Render visualizations tab content with enhanced graphs"""
-        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        numeric_cols = get_numeric_cols(df).tolist()
         
-        if len(numeric_cols) == 0:
-            return html.Div([
-                html.Div([
-                    html.I(className="fas fa-chart-bar", style={'fontSize': '48px', 'color': '#667eea', 'marginBottom': '20px'}),
-                    html.H3("No Numeric Columns Available", style={'color': '#333'}),
-                    html.P("Upload a dataset with numeric columns to see visualizations", 
-                          style={'color': '#666', 'fontSize': '16px'})
-                ], style={'textAlign': 'center', 'padding': '40px'})
-            ], style={'backgroundColor': '#f8f9fa', 'borderRadius': '12px', 'margin': '20px'})
+        if not numeric_cols:
+            return create_card([
+                html.I(className="fas fa-chart-bar", style={'fontSize': '48px', 'color': COLORS['primary'], 'marginBottom': '20px'}),
+                html.H3("No Numeric Columns Available", style={'color': '#333'}),
+                html.P("Upload a dataset with numeric columns to see visualizations", style={'color': '#666', 'fontSize': '16px'})
+            ], COLORS['primary'])
         
         content = [html.H2("📊 Interactive Data Visualizations", style={'color': '#333', 'marginBottom': '30px'})]
         
@@ -247,30 +287,22 @@ class VisualizationsTabView:
                 dcc.Graph(figure=fig_corr)
             ], style={'marginBottom': '30px', 'background': 'white', 'padding': '20px', 'borderRadius': '12px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}))
         
-        # Distribution plots in a grid
-        content.append(html.Div([
-            html.H3("📈 Distribution Plots", style={'marginBottom': '15px', 'color': '#333'}),
-            html.Div([
-                html.Div([
-                    dcc.Graph(figure=px.histogram(df, x=col, nbins=30, 
-                                                 title=f"Distribution of {col}",
-                                                 template='plotly_white').update_layout(height=300))
-                ], style={'marginBottom': '20px', 'background': 'white', 'padding': '15px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
-                for col in numeric_cols[:9]  # Limit to 9 columns
-            ])
-        ], style={'marginBottom': '30px'}))
+        def _create_chart_wrapper(fig, title):
+            return html.Div([dcc.Graph(figure=fig.update_layout(height=300, template='plotly_white'))],
+                          style={'marginBottom': '20px', 'background': 'white', 'padding': '15px', 
+                                'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
         
-        # Box plots
-        if len(numeric_cols) > 0:
+        if numeric_cols:
+            content.append(html.Div([
+                html.H3("📈 Distribution Plots", style={'marginBottom': '15px', 'color': '#333'}),
+                html.Div([_create_chart_wrapper(px.histogram(df, x=col, nbins=30, title=f"Distribution of {col}"), col)
+                         for col in numeric_cols[:9]])
+            ], style={'marginBottom': '30px'}))
+            
             content.append(html.Div([
                 html.H3("📦 Box Plots (Outlier Detection)", style={'marginBottom': '15px', 'color': '#333'}),
-                html.Div([
-                    html.Div([
-                        dcc.Graph(figure=px.box(df, y=col, title=f"Box Plot: {col}",
-                                               template='plotly_white').update_layout(height=300))
-                    ], style={'marginBottom': '20px', 'background': 'white', 'padding': '15px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
-                    for col in numeric_cols[:9]  # Limit to 9 columns
-                ])
+                html.Div([_create_chart_wrapper(px.box(df, y=col, title=f"Box Plot: {col}"), col)
+                         for col in numeric_cols[:9]])
             ], style={'marginBottom': '30px'}))
         
         # Scatter plots for top correlated pairs
@@ -537,6 +569,151 @@ class InsightsTabView:
                 ], style={'padding': '10px', 'backgroundColor': '#d4edda', 'margin': '5px 0', 'borderRadius': '5px'}))
         
         return html.Div(content)
+
+
+class GraphVisualizationTabView:
+    """View for graph visualization using Neo4j concepts"""
+    
+    @staticmethod
+    def render(df: pd.DataFrame):
+        """Render graph visualization tab content"""
+        graph_builder = Neo4jGraphBuilder()
+        content = [html.H2("🕸️ Graph Visualization & Data Relationships", style={'marginBottom': '20px', 'color': '#333'})]
+        
+        if df.empty or len(df) == 0:
+            content.append(html.Div([
+                html.P("No data loaded. Showing sample graph visualization.", 
+                      style={'color': '#666', 'marginBottom': '20px', 'fontStyle': 'italic'}),
+                GraphVisualizationTabView._create_sample_graph()
+            ]))
+            graph_builder.close()
+            return html.Div(content, style={'padding': '20px', 'backgroundColor': '#f8f9fa', 'minHeight': '100vh'})
+        
+        corr_graph = graph_builder.build_correlation_graph(df, threshold=0.5)
+        feature_graph = graph_builder.build_feature_relationship_graph(df, top_n=15)
+        
+        if corr_graph['nodes']:
+            content.append(html.H3("📊 Feature Correlation Network", style={'marginTop': '30px', 'color': '#667eea'}))
+            content.append(GraphVisualizationTabView._create_network_graph(corr_graph, "Correlation Network"))
+        elif len(df.select_dtypes(include=[np.number]).columns) >= 2:
+            corr_graph = graph_builder.build_correlation_graph(df, threshold=0.3)
+            if corr_graph['nodes']:
+                content.append(html.H3("📊 Feature Correlation Network", style={'marginTop': '30px', 'color': '#667eea'}))
+                content.append(GraphVisualizationTabView._create_network_graph(corr_graph, "Correlation Network"))
+        
+        if feature_graph['nodes']:
+            content.append(html.H3("🔗 Feature Relationship Graph", style={'marginTop': '30px', 'color': '#667eea'}))
+            content.append(GraphVisualizationTabView._create_network_graph(feature_graph, "Feature Relationships"))
+        
+        categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        if categorical_cols and numeric_cols:
+            segment_col = categorical_cols[0]
+            value_col = numeric_cols[0] if numeric_cols else None
+            if value_col:
+                seg_graph = graph_builder.build_segmentation_graph(df, segment_col, value_col)
+                if seg_graph['nodes']:
+                    content.append(html.H3("📈 Data Segmentation", style={'marginTop': '30px', 'color': '#667eea'}))
+                    content.append(GraphVisualizationTabView._create_segmentation_viz(df, segment_col, value_col))
+        
+        if len(content) == 1:
+            content.append(html.Div([
+                html.P("No strong correlations found. Showing sample graph visualization.", 
+                      style={'color': '#666', 'marginBottom': '20px', 'fontStyle': 'italic'}),
+                GraphVisualizationTabView._create_sample_graph()
+            ]))
+        
+        graph_builder.close()
+        return html.Div(content, style={'padding': '20px', 'backgroundColor': '#f8f9fa', 'minHeight': '100vh'})
+    
+    @staticmethod
+    def _create_sample_graph():
+        """Create a sample graph visualization"""
+        sample_nodes = [
+            {'id': 'Feature_A', 'label': 'Feature A', 'type': 'feature'},
+            {'id': 'Feature_B', 'label': 'Feature B', 'type': 'feature'},
+            {'id': 'Feature_C', 'label': 'Feature C', 'type': 'feature'},
+            {'id': 'Feature_D', 'label': 'Feature D', 'type': 'feature'},
+            {'id': 'Feature_E', 'label': 'Feature E', 'type': 'feature'}
+        ]
+        sample_edges = [
+            {'source': 'Feature_A', 'target': 'Feature_B', 'weight': 0.85, 'type': 'correlation'},
+            {'source': 'Feature_B', 'target': 'Feature_C', 'weight': 0.72, 'type': 'correlation'},
+            {'source': 'Feature_C', 'target': 'Feature_D', 'weight': 0.68, 'type': 'correlation'},
+            {'source': 'Feature_A', 'target': 'Feature_E', 'weight': 0.65, 'type': 'correlation'},
+            {'source': 'Feature_D', 'target': 'Feature_E', 'weight': 0.58, 'type': 'correlation'}
+        ]
+        sample_graph = {'nodes': sample_nodes, 'edges': sample_edges}
+        return GraphVisualizationTabView._create_network_graph(sample_graph, "Sample Feature Network")
+    
+    @staticmethod
+    def _create_network_graph(graph_data: dict, title: str):
+        """Create Plotly network graph from graph data"""
+        nodes = graph_data['nodes']
+        edges = graph_data['edges']
+        
+        if not nodes:
+            return html.Div("No graph data available")
+        
+        import math
+        n = len(nodes)
+        angle_step = 2 * math.pi / n if n > 0 else 0
+        radius = 3
+        
+        node_positions = {}
+        for i, node in enumerate(nodes):
+            angle = i * angle_step
+            node_positions[node['id']] = (radius * math.cos(angle), radius * math.sin(angle))
+        
+        edge_x, edge_y = [], []
+        for edge in edges:
+            if edge['source'] in node_positions and edge['target'] in node_positions:
+                x0, y0 = node_positions[edge['source']]
+                x1, y1 = node_positions[edge['target']]
+                edge_x.extend([x0, x1, None])
+                edge_y.extend([y0, y1, None])
+        
+        node_x = [node_positions[node['id']][0] for node in nodes]
+        node_y = [node_positions[node['id']][1] for node in nodes]
+        node_text = [node['label'][:15] for node in nodes]
+        node_info = [f"{node['label']}<br>Type: {node.get('type', 'node')}" for node in nodes]
+        
+        edge_trace = go.Scatter(x=edge_x, y=edge_y, line=dict(width=1.5, color='#888'), 
+                               hoverinfo='none', mode='lines')
+        node_trace = go.Scatter(x=node_x, y=node_y, mode='markers+text', text=node_text,
+                               textposition="middle center", hovertext=node_info, hoverinfo='text',
+                               marker=dict(size=25, color='#667eea', line=dict(width=2, color='white')))
+        
+        fig = go.Figure(data=[edge_trace, node_trace],
+                       layout=go.Layout(title=title, showlegend=False, hovermode='closest',
+                                       margin=dict(b=20, l=5, r=5, t=40),
+                                       xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                                       yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                                       height=500, plot_bgcolor='white'))
+        
+        return dcc.Graph(figure=fig, style={'background': 'white', 'padding': '15px', 'borderRadius': '8px', 'marginBottom': '20px'})
+    
+    @staticmethod
+    def _create_segmentation_viz(df: pd.DataFrame, segment_col: str, value_col: str):
+        """Create segmentation visualization"""
+        segment_stats = df.groupby(segment_col)[value_col].agg(['mean', 'count', 'std']).reset_index()
+        segment_stats = segment_stats.sort_values('mean', ascending=False).head(10)
+        
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=segment_stats[segment_col].astype(str), 
+                            y=segment_stats['mean'],
+                            error_y=dict(type='data', array=segment_stats['std']),
+                            marker_color='#667eea',
+                            text=segment_stats['count'].astype(str),
+                            textposition='outside',
+                            name='Average'))
+        
+        fig.update_layout(title=f"Segmentation Analysis: {value_col} by {segment_col}",
+                         xaxis_title=segment_col, yaxis_title=f"Average {value_col}",
+                         height=400, template='plotly_white')
+        
+        return dcc.Graph(figure=fig, style={'background': 'white', 'padding': '15px', 'borderRadius': '8px'})
 
 
 class DataTableView:
